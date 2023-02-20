@@ -16,7 +16,7 @@
 
 制作教程：
 
-1. 轴体改造篇：https://www.bilibili.com/read/cv21710143
+1. 轴体改造篇：https://www.bilibili.com/read/cv21948435
 
 
 B站主页：https://space.bilibili.com/9182439?spm_id_from=..0.0
