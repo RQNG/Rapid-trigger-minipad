@@ -14,6 +14,8 @@ Rapid trigger是Wooting键盘的特色功能，是指没有固定键程，靠上
 迎对此项目进行改造和发布新作品，请在描述中注明参考本项目的地方和本项目GitHub网址即可。
 
 # 制作教程
+![13](https://user-images.githubusercontent.com/115459678/220674378-8d570217-f2c0-463d-8ff0-872b27b706b0.jpg)
+
 1. 轴体改造篇：https://www.bilibili.com/read/cv21948435
 2. 软件设置篇：https://www.bilibili.com/read/cv21969155
 3. 硬件组装篇：https://www.bilibili.com/read/cv21985212
