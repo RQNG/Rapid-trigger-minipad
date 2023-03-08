@@ -16,10 +16,11 @@ Rapid trigger是Wooting键盘的特色功能，是指没有固定键程，靠上
 ![13](https://user-images.githubusercontent.com/115459678/220674378-8d570217-f2c0-463d-8ff0-872b27b706b0.jpg)
 
 # 项目特点
-* 制作简单，无需任何专业操作和专业知识就能制作。
+* 制作简单，无需任何专业操作（如焊接等）和专业知识就能制作。
 * 无法垄断，所有材料在国内都有渠道购买并且供货充足。
-* 成本较低，使用stm32作为主控，价格也比arduino更低，按键数量可以自行选择以降低成本。
+* 按键数多，最多能添加10个模拟按键，多于市面上其它方案。
 * 键距可调，每个按键为独立制作并且可以在外壳内自由摆放，提供多种宽度的填充模块。
+* 成本较低，使用stm32作为主控，价格也比arduino更低，按键数量可以自行选择以降低成本。
 * 性能更好，经测试，ADC精度比频率等因素更影响表现，而stm32有精度更高的ADC，因此是最优选择。
 
 # 内部结构
@@ -40,6 +41,30 @@ Rapid trigger是Wooting键盘的特色功能，是指没有固定键程，靠上
 1. hall-2k-keypad-handmade：https://github.com/chent7/hall-2k-keypad-handmade
 2. 如何DIY一款属于自己的HID键盘：https://mp.weixin.qq.com/s/o-8_3SQS2AGT_WTyTLYQnA
 3. 【三键侧透光小键盘】CH552G：https://oshwhub.com/phantomr/styudy-xiao-jian-pan-ch552g
+
+# 推荐项目
+下列项目都有Rapid trigger功能，它们各有优势，对我的项目有建议的，在给出建议之外，也可以尝试在这些项目中寻找解决方案。
+
+* hall-2k-keypad-handmade: https://github.com/chent7/hall-2k-keypad-handmade
+* minipad-firmware-old: https://github.com/minipadKB/minipad-firmware-old
+* minipad-firmware: https://github.com/minipadKB/minipad-firmware
+* fluxpad: https://github.com/sssata/fluxpad
+* the-poor-mans-keypad-and-future-wooting: https://www.reddit.com/r/osugame/comments/zpcvkw/the_poor_mans_keypad_and_future_wooting/
+* making-a-diy-wooting-keypad: https://www.reddit.com/r/osugame/comments/117v6xd/making_a_diy_wooting_keypad/
+* DIY under 20$ WOOTING like Keypad for Osu! (analog switches): https://www.youtube.com/watch?v=4rrDy9KakRI&t=10s&ab_channel=prAlex
+
+# 改进空间
+目前我的方案在通用性和表现上都已经很不错了，动手能力不强的普通玩家完全可以放心尝试，不会令你们失望的。
+对于不惜代价追求极致的人来说，我的方案可能显得太过廉价，因此在这里提出一些改进空间，欢迎尝试，如果愿意分享的话，请合并在第三方项目中供他人参考。
+
+* 使用stm32作为主控，不是因为廉价，而是因为它拥有最高的ADC分辨率，这个最影响体验。
+* 使用stm32的标准库或者hal库来实现通信功能，因为有成熟的方案可用，只是因为IDE劝退新手，没在这个项目中用。
+* 使用AH491线性霍尔传感器，它的灵敏度很高为15mv/Gs，但相对的会放大抖动，不好调试，因此没在这个项目中用。
+* 使用pcb，能降低干扰并且有益于批量化生产，但因为要焊接劝退新手，且无法实现可调键距，因此没在这个项目中用
+* 使用已经做好的磁轴，是里面有个小磁铁跟着上下移动的那种，因为有垄断风险没有在项目中用，目前已知的有三种：
+1. wooting的lekker轴，这个要海淘
+2. 佳达隆的ks-20，这个没发售
+3. 东莞市益谦电子有限公司的一款蓝色轴芯透明外壳的，1688搜索“磁轴”能找到。
 
 # 建议收集
 * 初版方案建议收集动态：https://t.bilibili.com/757193959862697993
