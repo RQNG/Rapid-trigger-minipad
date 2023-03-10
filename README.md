@@ -52,6 +52,7 @@ Rapid trigger是Wooting键盘的特色功能，是指没有固定键程，靠上
 * the-poor-mans-keypad-and-future-wooting: https://www.reddit.com/r/osugame/comments/zpcvkw/the_poor_mans_keypad_and_future_wooting/
 * making-a-diy-wooting-keypad: https://www.reddit.com/r/osugame/comments/117v6xd/making_a_diy_wooting_keypad/
 * DIY under 20$ WOOTING like Keypad for Osu! (analog switches): https://www.youtube.com/watch?v=4rrDy9KakRI&t=10s&ab_channel=prAlex
+* BexPad: https://github.com/Bexin3/BexPad
 
 # 改进空间
 目前我的方案在通用性和表现上都已经很不错了，动手能力不强的普通玩家完全可以放心尝试，不会令你们失望的。
