@@ -3,30 +3,24 @@
   
   主功能移植并优化自 Github 上的一个开源项目，添加了按键的独立参数和两端的死区，优化了初始化方式，增加控制器，模仿稚晖君 MonoUI 的超丝滑菜单。
 
-  当前版本：v2.1
+  当前版本：v3.0
 
-    * 重构代码，只保存路径和选择框所在位置，分页面类型定义变量。
-    * 增加图标和列表两种主界面风格。
-    * 支持本地查看所有配置，在关于本机页面。
-    * 支持128*64，128*32两种主流OLED屏幕分辨率，只需要替换驱动即可。
-    * 增加列表展开动画效果。
-    * 增加选择框展开和跳转动画效果。
-    * 增强动画速度的可调精度。
-    * 增加循环模式。
-    * 增加旋钮方向反转选项。
-  
-  控制器实现了以下功能：
-
-    * 丝滑菜单，模仿UltraLink的MonoUI，实现主界面动画，列表动画，聚焦动画等，可分别调节动画速度。
-    * 旋钮功能，在休眠界面旋转可调节音量或亮度，点按后进入主菜单，在菜单界面旋转滚动菜单，点按选择菜单。
-    * 三种模式，支持不同极性的磁轴和传感器的组合，还有禁用模式。
-    * 参数设置，支持设置几乎所有参数，包括：触发值，释放值，上死区，下死区，键值，模式，初始化时放大抖动的倍数，每个按键都可以独立设置，也可以一起设置。
-    * 断电保存，回到休眠模式即保存当前设置，断电后不会丢失。
-    * 测试引脚，支持查看每一个引脚的电压变化情况，用于测试传感器和引脚是否正常。
+    * 此程序可视为 WouoUI v2.0 例程，WouoUI 是从此程序 v2.x 版本衍生出的 UI 架构。
+    * UI 流畅度优化，实现了优雅的平滑动画，动画算法被优化到只有两行。
+    * UI 架构优化，基本重构了 v2.x，实现了独立弹窗，白天和黑暗模式，单选和多选框，开关等功能。
+    * 删除主界面列表菜单风格，增加主界面图标动画可选项，回到主界面时，图标可以从正上方当前位置向两边发牌，或者从左上方从头开始发牌。
+    * 删除关于本机页配置查看功能，增加参数修改页面，参数直接显示在每行末尾功能。
+    * 选择框跳转动画改为宽度和竖直方向位置都从当前位置到上一级选中位置平滑过渡。
+    * 增加动画速度可调区间。10 ~ 100。
+    * 修复循环模式选择框在跳转动画未结束前，选择项后退时，列表与屏幕错位的问题。
+    * 修复选择框在选择滚动过快时，滚出屏幕外的问题（虽然我觉得这是个有趣的特性，只要往回滚动就好不影响正常使用）。
+    * 增加独立弹窗动画，背景虚化开关功能（开启虚化会有轻微卡顿感，但或许有些人喜欢，因此保留可选项）。
+    * 重新设计电压测试页，增加波形显示功能，现在可以同时观察数值和波形。
   
   测试用开发板为STM32 F103C8T6，以下是使用说明：
 
     硬件：
+
     * EC11：A -> PB13 ; B -> PB12 ; S -> PB14 ; 电源3.3v
     * OLED：四线，0.96 SSD1306 128*64，SDA -> PB7 ; SCL -> PB6 ; 电源3.3v
     * 板子上的跳线帽设置：BOOT0 -> 1 ; BOOT1 -> 0 
@@ -48,7 +42,7 @@
     
     注意：
 
-    * 上传程序前，先确认使用的轴的总键程是否为4mm，如果不是，需要修改 key 数组变量中代表 travel 一行的相关参数，单位0.1mm，即4mm的值为40。
+    * 上传程序前，先确认使用的轴的总键程是否为4mm，如果不是，需要修改 key 数组变量中代表 travel 一列的相关参数，单位0.1mm，即4mm的值为40。
     * 拔插USB后，正常情况下，屏幕会变黑，板子上的蓝灯会点亮一秒钟，点亮时不要动按键，这是在初始化。
     * 初始化后，每个按键都需要按下一次后才能正常使用，按下时要按到底。
 
@@ -73,7 +67,9 @@
   用户名：音游玩的人，B站主页：https://space.bilibili.com/9182439?spm_id_from=..0.0
 */
 
-/************************************* 屏幕和UI *************************************/
+/************************************* 屏幕驱动 *************************************/
+
+//分辨率128*64，可以使用硬件IIC接口
 
 #include <U8g2lib.h>
 #include <Wire.h>
@@ -83,7 +79,486 @@
 #define   RST   U8X8_PIN_NONE
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, SCL, SDA, RST);     // 分辨率：128*64  驱动：SSD1306  接口：IIC（硬件）
-//U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C  u8g2(U8G2_R0, SCL, SDA, RST); // 分辨率：128*32  驱动：SSD1306  接口：IIC（硬件）
+
+/************************************* 定义页面 *************************************/
+
+//总目录，缩进表示页面层级
+enum 
+{
+  M_WINDOW,
+  M_SLEEP,
+    M_MAIN, 
+      M_EDITOR,
+        M_KNOB,
+          M_KRF,
+        M_KEYS,
+          M_KCODE,
+          M_KMODE,
+      M_VOLT,
+      M_SETTING,
+        M_ABOUT,
+};
+
+//状态，初始化标签
+enum
+{
+  S_FADE,       //转场动画
+  S_WINDOW,     //弹窗初始化
+  S_LAYER_IN,   //层级初始化
+  S_LAYER_OUT,  //层级初始化
+  S_NONE,       //直接选择页面
+};
+
+//菜单结构体
+typedef struct MENU
+{
+  char *m_select;
+} M_SELECT;
+
+/************************************* 定义内容 *************************************/
+
+/************************************* 文字内容 *************************************/
+
+M_SELECT main_menu[]
+{
+  {"Sleep"},
+  {"Editor"},
+  {"Volt"},
+  {"Setting"},
+};
+
+M_SELECT editor_menu[]
+{
+  {"[ Editor ]"},
+  {"- Knob"},
+  {"- Key 0"},
+  {"- Key 1"},
+  {"- Key 2"},
+  {"- Key 3"},
+  {"- Key 4"},
+  {"- Key 5"},
+  {"- Key 6"},
+  {"- Key 7"},
+  {"- Key 8"},
+  {"- Key 9"},
+};
+
+M_SELECT knob_menu[]
+{
+  {"[ Knob ]"},
+  {"# Rotate Func"},
+  {"$ Press Func"},
+};
+
+M_SELECT krf_menu[]
+{
+  {"[ Rotate Function ]"},
+  {"--------------------------"},
+  {"= Disable"},
+  {"--------------------------"},
+  {"= Volume"},
+  {"= Brightness"},
+  {"--------------------------"},
+};
+
+M_SELECT keys_menu[]
+{
+  {"[ Keys ]"},
+  {"~ Trigger"},
+  {"~ Release"},
+  {"~ Top"},
+  {"~ Bottom"},
+  {"~ Times"},
+  {"$ Codes"},
+  {"& Modes"},
+};
+
+M_SELECT kcode_menu[]
+{
+  {"[ Key Code ]"},
+  {"--------------------------"},
+  {"= Disable"},
+  {"--------------------------"},
+  {"= A"},
+  {"= B"},
+  {"= C"},
+  {"= D"},
+  {"= E"},
+  {"= F"},
+  {"= G"},
+  {"= H"},
+  {"= I"},
+  {"= J"},
+  {"= K"},
+  {"= L"},
+  {"= M"},
+  {"= N"},
+  {"= O"},
+  {"= P"},
+  {"= Q"},
+  {"= R"},
+  {"= S"},
+  {"= T"},
+  {"= U"},
+  {"= V"},
+  {"= W"},
+  {"= X"},
+  {"= Y"},
+  {"= Z"},
+  {"--------------------------"},
+  {"= 0"},
+  {"= 1"},
+  {"= 2"},
+  {"= 3"},
+  {"= 4"},
+  {"= 5"},
+  {"= 6"},
+  {"= 7"},
+  {"= 8"},
+  {"= 9"},
+  {"--------------------------"},
+  {"= Esc"},
+  {"= F1"},
+  {"= F2"},
+  {"= F3"},
+  {"= F4"},
+  {"= F5"},
+  {"= F6"},
+  {"= F7"},
+  {"= F8"},
+  {"= F9"},
+  {"= F10"},
+  {"= F11"},
+  {"= F12"},
+  {"--------------------------"},
+  {"= Left Ctrl"},
+  {"= Left Shift"},
+  {"= Left Alt"},
+  {"= Left Win"},
+  {"= Right Ctrl"},
+  {"= Right Shift"},
+  {"= Right Alt"},
+  {"= Right Win"},
+  {"--------------------------"},
+  {"= Caps Lock"},
+  {"= Backspace"},
+  {"= Return"},
+  {"= Insert"},
+  {"= Delete"},
+  {"= Tab"},
+  {"--------------------------"},
+  {"= Home"},
+  {"= End"},
+  {"= Page Up"},
+  {"= Page Down"},
+  {"--------------------------"},
+  {"= Up Arrow"},
+  {"= Down Arrow"},
+  {"= Left Arrow"},
+  {"= Right Arrow"},
+  {"--------------------------"},
+};
+
+M_SELECT kmode_menu[]
+{
+  {"[ Mode ]"},
+  {"--------------------------"},
+  {"= Mode 1"},
+  {"= Mode 2"},
+  {"--------------------------"},
+};
+
+M_SELECT volt_menu[]
+{
+  {"A0"},
+  {"A1"},
+  {"A2"},
+  {"A3"},
+  {"A4"},
+  {"A5"},
+  {"A6"},
+  {"A7"},
+  {"B0"},
+  {"B1"},
+};
+
+M_SELECT setting_menu[]
+{
+  {"[ Setting ]"},
+  {"~ Disp Bri"},
+  {"~ Tile Ani"},
+  {"~ List Ani"},
+  {"~ Win Ani"},
+  {"~ Spot Ani"},
+  {"~ Tag Ani"},
+  {"~ Fade Ani"},
+  {"~ Btn SPT"},
+  {"~ Btn LPT"},
+  {"+ T Ufd Fm Scr"},
+  {"+ L Ufd Fm Scr"},
+  {"+ T Loop Mode"},
+  {"+ L Loop Mode"},
+  {"+ Win Bokeh Bg"},
+  {"+ Knob Rot Dir"},
+  {"+ Dark Mode"},
+  {"- [ About ]"},
+};
+
+M_SELECT about_menu[]
+{
+  {"[ WouoUI ]"},
+  {"- Version: v2.0"},
+  {"- Board: STM32F103"},
+  {"- Ram: 20k"},
+  {"- Flash: 64k"},
+  {"- Freq: 72Mhz"},
+  {"- Creator: RQNG"},
+  {"- Billi UID: 9182439"},  
+};
+
+/************************************* 图片内容 *************************************/
+
+PROGMEM const uint8_t main_icon_pic[][120]
+{
+  {
+    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xF1,0x3F,
+    0xFF,0xFF,0xC3,0x3F,0xFF,0xFF,0x87,0x3F,0xFF,0xFF,0x07,0x3F,0xFF,0xFF,0x0F,0x3E,
+    0xFF,0xFF,0x0F,0x3E,0xFF,0xFF,0x0F,0x3C,0xFF,0xFF,0x0F,0x3C,0xFF,0xFF,0x0F,0x38,
+    0xFF,0xFF,0x0F,0x38,0xFF,0xFF,0x0F,0x38,0xFF,0xFF,0x07,0x38,0xFF,0xFF,0x07,0x38,
+    0xFF,0xFF,0x03,0x38,0xF7,0xFF,0x01,0x38,0xE7,0xFF,0x00,0x3C,0x87,0x3F,0x00,0x3C,
+    0x0F,0x00,0x00,0x3E,0x0F,0x00,0x00,0x3E,0x1F,0x00,0x00,0x3F,0x3F,0x00,0x80,0x3F,
+    0x7F,0x00,0xC0,0x3F,0xFF,0x01,0xF0,0x3F,0xFF,0x07,0xFC,0x3F,0xFF,0xFF,0xFF,0x3F,
+    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F
+  },
+  {
+    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xF9,0xE7,0x3F,
+    0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,0xFF,0xF0,0xE7,0x3F,0x7F,0xE0,0xE7,0x3F,
+    0x7F,0xE0,0xC3,0x3F,0x7F,0xE0,0xC3,0x3F,0x7F,0xE0,0xC3,0x3F,0x7F,0xE0,0xE7,0x3F,
+    0xFF,0xF0,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,
+    0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xC3,0x3F,0xFF,0xF9,0x81,0x3F,0xFF,0xF0,0x81,0x3F,
+    0xFF,0xF0,0x81,0x3F,0xFF,0xF0,0x81,0x3F,0xFF,0xF9,0x81,0x3F,0xFF,0xF9,0xC3,0x3F,
+    0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,0xFF,0xFF,0xFF,0x3F,
+    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F
+  },
+  {
+    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xEF,0xFF,0xFF,0x3F,0xC7,0xFF,0xFF,0x3F,
+    0xC7,0xF3,0xFF,0x3F,0x83,0xC0,0xFF,0x3F,0xEF,0xCC,0xFF,0x3F,0x6F,0x9E,0xFF,0x3F,
+    0x6F,0x9E,0xFF,0x3F,0x2F,0x3F,0xFF,0x3F,0x2F,0x3F,0xFF,0x3F,0x8F,0x7F,0xFE,0x3F,
+    0x8F,0x7F,0xFE,0x39,0x8F,0x7F,0xFE,0x39,0xCF,0xFF,0xFC,0x3C,0xCF,0xFF,0xFC,0x3C,
+    0xEF,0xFF,0xFC,0x3C,0xEF,0xFF,0x79,0x3E,0xEF,0xFF,0x79,0x3E,0xEF,0xFF,0x33,0x3F,
+    0xEF,0xFF,0x33,0x3F,0xEF,0xFF,0x87,0x3F,0xEF,0xFF,0xCF,0x3F,0xEF,0xFF,0x7F,0x3E,
+    0xEF,0xFF,0x7F,0x38,0x0F,0x00,0x00,0x30,0xFF,0xFF,0x7F,0x38,0xFF,0xFF,0x7F,0x3E,
+    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,
+  },
+  {
+    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,
+    0xFF,0x1F,0xFE,0x3F,0xFF,0x1F,0xFE,0x3F,0xFF,0x0C,0xCC,0x3F,0x7F,0x00,0x80,0x3F,
+    0x3F,0x00,0x00,0x3F,0x3F,0xE0,0x01,0x3F,0x7F,0xF8,0x87,0x3F,0x7F,0xFC,0x8F,0x3F,
+    0x3F,0xFC,0x0F,0x3F,0x0F,0x3E,0x1F,0x3C,0x0F,0x1E,0x1E,0x3C,0x0F,0x1E,0x1E,0x3C,
+    0x0F,0x3E,0x1F,0x3C,0x3F,0xFC,0x0F,0x3F,0x7F,0xFC,0x8F,0x3F,0x7F,0xF8,0x87,0x3F,
+    0x3F,0xE0,0x01,0x3F,0x3F,0x00,0x00,0x3F,0x7F,0x00,0x80,0x3F,0xFF,0x0C,0xCC,0x3F,
+    0xFF,0x1F,0xFE,0x3F,0xFF,0x1F,0xFE,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,
+    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F
+  },
+};
+
+/************************************* 页面变量 *************************************/
+
+//OLED变量
+#define   DISP_H              64    //屏幕高度
+#define   DISP_W              128   //屏幕宽度
+uint8_t   *buf_ptr;                 //指向屏幕缓冲的指针
+uint16_t  buf_len;                  //缓冲长度
+
+//UI变量
+#define   UI_DEPTH            20    //最深层级数
+#define   UI_MNUMB            100   //菜单数量
+#define   UI_PARAM            16    //参数数量
+enum 
+{
+  DISP_BRI,     //屏幕亮度
+  TILE_ANI,     //磁贴动画速度
+  LIST_ANI,     //列表动画速度
+  WIN_ANI,      //弹窗动画速度
+  SPOT_ANI,     //聚光动画速度
+  TAG_ANI,      //标签动画速度
+  FADE_ANI,     //消失动画速度
+  BTN_SPT,      //按键短按时长
+  BTN_LPT,      //按键长按时长
+  TILE_UFD,     //磁贴图标从头展开开关
+  LIST_UFD,     //菜单列表从头展开开关
+  TILE_LOOP,    //磁贴图标循环模式开关
+  LIST_LOOP,    //菜单列表循环模式开关
+  WIN_BOK,      //弹窗背景虚化开关
+  KNOB_DIR,     //旋钮方向切换开关
+  DARK_MODE,    //黑暗模式开关
+};
+struct 
+{
+  bool      init;
+  uint8_t   num[UI_MNUMB];
+  uint8_t   select[UI_DEPTH];
+  uint8_t   layer;
+  uint8_t   index = M_SLEEP;
+  uint8_t   state = S_NONE;
+  bool      sleep = true;
+  uint8_t   fade = 1;
+  uint8_t   param[UI_PARAM];
+} ui;
+
+//磁贴变量
+//所有磁贴页面都使用同一套参数
+#define   TILE_B_FONT         u8g2_font_helvB18_tr        //磁贴大标题字体
+#define   TILE_S_FONT         u8g2_font_HelvetiPixel_tr   //磁贴小标题字体
+#define   TILE_B_TITLE_H      18                          //磁贴大标题字体高度
+#define   TILE_ICON_H         30                          //磁贴图标高度
+#define   TILE_ICON_W         30                          //磁贴图标宽度
+#define   TILE_ICON_S         36                          //磁贴图标间距
+#define   TILE_INDI_H         27                          //磁贴大标题指示器高度
+#define   TILE_INDI_W         7                           //磁贴大标题指示器宽度
+#define   TILE_INDI_S         36                          //磁贴大标题指示器上边距
+struct 
+{
+  float   title_y_calc = TILE_INDI_S + (TILE_INDI_H - TILE_B_TITLE_H) / 2 + TILE_B_TITLE_H * 2;
+  float   title_y_trg_calc = TILE_INDI_S + (TILE_INDI_H - TILE_B_TITLE_H) / 2 + TILE_B_TITLE_H;
+  int16_t temp;
+  bool    select_flag;
+  float   icon_x;
+  float   icon_x_trg;
+  float   icon_y;
+  float   icon_y_trg;
+  float   indi_x; 
+  float   indi_x_trg;
+  float   title_y;
+  float   title_y_trg;
+} tile;
+
+//列表变量
+
+//默认参数
+#define   LIST_FONT           u8g2_font_HelvetiPixel_tr   //列表字体
+#define   LIST_TEXT_H         8                           //列表每行文字字体的高度
+#define   LIST_LINE_H         16                          //列表单行高度
+#define   LIST_TEXT_S         4                           //列表每行文字的上边距，左边距和右边距，下边距由它和字体高度和行高度决定
+#define   LIST_BAR_W          5                           //列表进度条宽度，需要是奇数，因为正中间有1像素宽度的线
+#define   LIST_BOX_R          0.5                         //列表选择框圆角
+
+/*
+//超窄行高度测试
+#define   LIST_FONT           u8g2_font_4x6_tr            //列表字体
+#define   LIST_TEXT_H         5                           //列表每行文字字体的高度
+#define   LIST_LINE_H         7                           //列表单行高度
+#define   LIST_TEXT_S         1                           //列表每行文字的上边距，左边距和右边距，下边距由它和字体高度和行高度决定
+#define   LIST_BAR_W          7                           //列表进度条宽度，需要是奇数，因为正中间有1像素宽度的线
+#define   LIST_BOX_R          0.5                         //列表选择框圆角
+*/
+struct
+{
+  uint8_t line_n = DISP_H / LIST_LINE_H;
+  int16_t temp;
+  bool    loop;
+  float   y;
+  float   y_trg;
+  float   box_x;
+  float   box_x_trg;
+  float   box_y;
+  float   box_y_trg[UI_DEPTH];
+  float   bar_y;
+  float   bar_y_trg;
+} list;
+
+//电压测量页面变量
+//开发板模拟引脚
+uint8_t   analog_pin[10] = { PA0, PA1, PA2, PA3, PA4, PA5, PA6, PA7, PB0, PB1 };
+//曲线相关
+#define   WAVE_SAMPLE         20                          //采集倍数
+#define   WAVE_W              94                          //波形宽度
+#define   WAVE_L              24                          //波形左边距
+#define   WAVE_U              0                           //波形上边距
+#define   WAVE_MAX            27                          //最大值
+#define   WAVE_MIN            4                           //最小值
+#define   WAVE_BOX_H          32                          //波形边框高度
+#define   WAVE_BOX_W          94                          //波形边框宽度
+#define   WAVE_BOX_L_S        24                          //波形边框左边距
+//列表和文字背景框相关
+#define   VOLT_FONT           u8g2_font_helvB18_tr        //电压数字字体
+#define   VOLT_TEXT_BG_L_S    24                          //文字背景框左边距
+#define   VOLT_TEXT_BG_W      94                          //文字背景框宽度
+#define   VOLT_TEXT_BG_H      29                          //文字背景框高度
+struct
+{
+  int     ch0_adc[WAVE_SAMPLE * WAVE_W];
+  int     ch0_wave[WAVE_W];
+  int     val;
+  float   text_bg_r; 
+  float   text_bg_r_trg; 
+} volt;
+
+//选择框变量
+
+//默认参数
+#define   CHECK_BOX_L_S       95                          //选择框在每行的左边距
+#define   CHECK_BOX_U_S       2                           //选择框在每行的上边距
+#define   CHECK_BOX_F_W       12                          //选择框外框宽度
+#define   CHECK_BOX_F_H       12                          //选择框外框高度
+#define   CHECK_BOX_D_S       2                           //选择框里面的点距离外框的边距
+
+/*
+//超窄行高度测试
+#define   CHECK_BOX_L_S       99                          //选择框在每行的左边距
+#define   CHECK_BOX_U_S       0                           //选择框在每行的上边距
+#define   CHECK_BOX_F_W       5                           //选择框外框宽度
+#define   CHECK_BOX_F_H       5                           //选择框外框高度
+#define   CHECK_BOX_D_S       1                           //选择框里面的点距离外框的边距
+*/
+struct
+{
+  uint8_t *v;
+  uint8_t *m;
+  uint8_t *s;
+  uint8_t *s_p;
+} check_box;
+
+//弹窗变量
+#define   WIN_FONT            u8g2_font_HelvetiPixel_tr   //弹窗字体
+#define   WIN_H               32                          //弹窗高度
+#define   WIN_W               102                         //弹窗宽度
+#define   WIN_BAR_W           92                          //弹窗进度条宽度
+#define   WIN_BAR_H           7                           //弹窗进度条高度
+#define   WIN_Y               - WIN_H - 2                 //弹窗竖直方向出场起始位置
+#define   WIN_Y_TRG           - WIN_H - 2                 //弹窗竖直方向退场终止位置
+struct
+{
+  //uint8_t
+  uint8_t   *value;
+  uint8_t   max;
+  uint8_t   min;
+  uint8_t   step;
+
+  MENU      *bg;
+  uint8_t   index;
+  char      title[20];
+  uint8_t   select;
+  uint8_t   l = (DISP_W - WIN_W) / 2;
+  uint8_t   u = (DISP_H - WIN_H) / 2;
+  float     bar;
+  float     bar_trg;
+  float     y;
+  float     y_trg;
+} win;
+
+//聚光灯变量
+struct
+{
+  float   l; 
+  float   l_trg; 
+  float   r; 
+  float   r_trg; 
+  float   u; 
+  float   u_trg; 
+  float   d; 
+  float   d_trg; 
+} spot;
 
 /************************************* USB 相关 *************************************/
 
@@ -106,35 +581,78 @@ void hid_init()
   while (!USBComposite);
 }
 
-/************************************* 按键相关 *************************************/
+/********************************** 自定义功能变量 **********************************/
+
+/********************************** 旋钮 HID 控制 **********************************/
+
+//旋钮功能变量
+#define   KNOB_PARAM          4
+#define   KNOB_ROT_DIS        0
+#define   KNOB_ROT_VOL        1
+#define   KNOB_ROT_BRI        2
+enum 
+{
+  KNOB_ROT,       //睡眠下旋转旋钮的功能，0 禁用，1 音量，2 亮度
+  KNOB_COD,       //睡眠下短按旋钮输入的字符码，0 禁用
+  KNOB_ROT_P,     //旋转旋钮功能在单选框中选择的位置
+  KNOB_COD_P,     //字符码在单选框中选择的位置
+};
+struct 
+{
+  uint8_t param[KNOB_PARAM] = { 0, 0, 2, 2 }; //禁用在列表的第2个选项，第0个是标题，第1个是分界线
+} knob;
+
+/********************************** Rapid Trigger **********************************/
 
 // 按键参数
 #define         KEYS        10
 #define         LIGHT       PC13
-#define         TRIGGER     0
-#define         RELEASE     1
-#define         TOP         2
-#define         BOTTOM      3
-#define         TIMES       4
-#define         CODES       5
-#define         MODES       6
-#define         PINS        7
-#define         TRAVEL      8
+#define         KEY_DIS     0
+#define         KEY_MODE1   1
+#define         KEY_MODE2   2
+enum 
+{
+  K0,
+  K1,
+  K2,
+  K3,
+  K4,
+  K5,
+  K6,
+  K7,
+  K8,
+  K9,
+};
+enum 
+{
+  TRIGGER,
+  RELEASE,
+  TOP, 
+  BOTTOM,
+  TIMES,
+  CODES,
+  MODES,
+  CODES_P,
+  MODES_P,
+  PINS,
+  TRAVEL,
+};
 
 // 按键变量
-uint8_t         key        [9][KEYS + 1] =
+uint8_t key [KEYS][11] =
 { 
-  // key0  key1  key2  key3  key4  key5  key6  key7  key8  key9   all
-  {    3,    3,    3,    3,    3,    3,    3,    3,    3,    3,    3 }, // trigger
-  {    3,    3,    3,    3,    3,    3,    3,    3,    3,    3,    3 }, // release
-  {    3,    3,    3,    3,    3,    3,    3,    3,    3,    3,    3 }, // top
-  {    3,    3,    3,    3,    3,    3,    3,    3,    3,    3,    3 }, // bottom
-  {    5,    5,    5,    5,    5,    5,    5,    5,    5,    5,    5 }, // times
-  {  'a',  'b',  'c',  'd',  'e',  'f',  'g',  'h',  'i',  'j',  'k' }, // codes
-  {    1,    1,    1,    1,    1,    1,    1,    1,    1,    1,    1 }, // modes
-  {  PA0,  PA1,  PA2,  PA3,  PA4,  PA5,  PA6,  PA7,  PB0,  PB1,  PB1 }, // pins
-  {   40,   40,   40,   40,   40,   40,   40,   40,   40,   40,   40 }, // travel
-}; 
+//  trigger  release   top   bottom   times   codes     modes    codes_p  modes_p   pins  travel
+  {    3,       3,      3,     3,      10,   KEY_DIS, KEY_MODE1,    2,      2,      PA0,    40 },  // K0
+  {    3,       3,      3,     3,      10,   KEY_DIS, KEY_MODE1,    2,      2,      PA1,    40 },  // K1
+  {    3,       3,      3,     3,      10,   KEY_DIS, KEY_MODE1,    2,      2,      PA2,    40 },  // K2
+  {    3,       3,      3,     3,      10,   KEY_DIS, KEY_MODE1,    2,      2,      PA3,    40 },  // K3
+  {    3,       3,      3,     3,      10,   KEY_DIS, KEY_MODE1,    2,      2,      PA4,    40 },  // K4
+  {    3,       3,      3,     3,      10,   KEY_DIS, KEY_MODE1,    2,      2,      PA5,    40 },  // K5
+  {    3,       3,      3,     3,      10,   KEY_DIS, KEY_MODE1,    2,      2,      PA6,    40 },  // K6
+  {    3,       3,      3,     3,      10,   KEY_DIS, KEY_MODE1,    2,      2,      PA7,    40 },  // K7
+  {    3,       3,      3,     3,      10,   KEY_DIS, KEY_MODE1,    2,      2,      PB0,    40 },  // K8
+  {    3,       3,      3,     3,      10,   KEY_DIS, KEY_MODE1,    2,      2,      PB1,    40 },  // K9
+};
 
 /************************************* 按键扫描 *************************************/
 
@@ -165,8 +683,8 @@ void key_init()
   // 读模拟量，最大值和最小值先暂定为当前值
   for (uint8_t n = 0; n < KEYS; ++n) 
   {
-    pinMode(key[PINS][n],INPUT_ANALOG);
-    keyx[n].value = analogRead(key[PINS][n]);
+    pinMode(key[n][PINS],INPUT_ANALOG);
+    keyx[n].value = analogRead(key[n][PINS]);
     keyx[n].min = keyx[n].value;
     keyx[n].max = keyx[n].value;
   }
@@ -176,7 +694,7 @@ void key_init()
   {
     for (uint8_t n = 0; n < KEYS; ++n) 
     {
-      keyx[n].value = analogRead(key[PINS][n]);
+      keyx[n].value = analogRead(key[n][PINS]);
       if (keyx[n].value < keyx[n].min) 
       {
         keyx[n].min = keyx[n].value;
@@ -191,20 +709,20 @@ void key_init()
 
   for (uint8_t n = 0; n < KEYS; ++n) 
   {
-    keyx[n].cushion = (keyx[n].max - keyx[n].min) * key[TIMES][n];      // 计算缓冲值
+    keyx[n].cushion = (keyx[n].max - keyx[n].min) * key[n][TIMES];      // 计算缓冲值
 
     // 初始化一些参数
     keyx[n].init = false;                                               // 按键还没有被首次按下
     keyx[n].reference = keyx[n].value;                                  // 初始化参考值为当前值
-    keyx[n].trigger = key[TRIGGER][n] * keyx[n].cushion;                // 初始化触发值，避免插上的瞬间有输入
-    keyx[n].release = key[RELEASE][n] * keyx[n].cushion;                // 初始化释放值，避免插上的瞬间有输入
+    keyx[n].trigger = key[n][TRIGGER] * keyx[n].cushion;                // 初始化触发值，避免插上的瞬间有输入
+    keyx[n].release = key[n][RELEASE] * keyx[n].cushion;                // 初始化释放值，避免插上的瞬间有输入
 
-    if (key[MODES][n] == 1)
+    if (key[n][MODES] == 1)
     {
       keyx[n].min = keyx[n].value;                                      // 初始化最小值，暂定为当前值
       keyx[n].max = keyx[n].value + keyx[n].cushion;                    // 初始化最大值，暂定为当前值 + 缓冲值
     }
-    else if (key[MODES][n] == 2)
+    else if (key[n][MODES] == 2)
     {
       keyx[n].min = keyx[n].value - keyx[n].cushion;                    // 初始化最小值，暂定为当前值
       keyx[n].max = keyx[n].value;                                      // 初始化最大值，暂定为当前值 + 缓冲值
@@ -218,9 +736,9 @@ void key_init()
 // 转换距离，将以毫米为单位的值转换成模拟量，假设磁铁外磁场强度均匀变化，则距离与模拟量线性相关
 void convertDistance(uint8_t n) 
 {
-  keyx[n].unit = (keyx[n].max - keyx[n].min) / key[TRAVEL][n];
-  keyx[n].trigger = keyx[n].unit * key[TRIGGER][n];
-  keyx[n].release = keyx[n].unit * key[RELEASE][n];
+  keyx[n].unit = (keyx[n].max - keyx[n].min) / key[n][TRAVEL];
+  keyx[n].trigger = keyx[n].unit * key[n][TRIGGER];
+  keyx[n].release = keyx[n].unit * key[n][RELEASE];
 }
 
 /************************************* 区分模式 *************************************/
@@ -232,7 +750,7 @@ void pressKey_1(uint8_t n)
 {
   if (keyx[n].init)
   {
-    Keyboard.press(key[CODES][n]);
+    Keyboard.press(key[n][CODES]);
   } 
   else if (keyx[n].value > keyx[n].min + keyx[n].cushion)
   {
@@ -246,7 +764,7 @@ void releaseKey_1(uint8_t n)
 {
   if (keyx[n].init)
   {
-    Keyboard.release(key[CODES][n]);
+    Keyboard.release(key[n][CODES]);
   } 
   else if (keyx[n].value > keyx[n].min + keyx[n].cushion)
   {
@@ -274,7 +792,7 @@ void balanceKey_1(uint8_t n)
 void processKey_1(uint8_t n) 
 {
   // 不在死区移动时的判断
-  if ((keyx[n].value > keyx[n].min + keyx[n].unit * key[TOP][n]) && (keyx[n].value < keyx[n].max - keyx[n].unit * key[BOTTOM][n]))
+  if ((keyx[n].value > keyx[n].min + keyx[n].unit * key[n][TOP]) && (keyx[n].value < keyx[n].max - keyx[n].unit * key[n][BOTTOM]))
   {
     if (!keyx[n].pressed) 
     {
@@ -301,11 +819,11 @@ void processKey_1(uint8_t n)
   }
 
   // 在死区移动时的判断
-  else if ((keyx[n].value < keyx[n].min + keyx[n].unit * key[TOP][n]) && keyx[n].pressed)
+  else if ((keyx[n].value < keyx[n].min + keyx[n].unit * key[n][TOP]) && keyx[n].pressed)
   {
     releaseKey_1(n);
   }
-  else if ((keyx[n].value > keyx[n].max - keyx[n].unit * key[BOTTOM][n]) && !keyx[n].pressed)
+  else if ((keyx[n].value > keyx[n].max - keyx[n].unit * key[n][BOTTOM]) && !keyx[n].pressed)
   {
     pressKey_1(n);
   }
@@ -318,7 +836,7 @@ void pressKey_2(uint8_t n)
 {
   if (keyx[n].init)
   {
-    Keyboard.press(key[CODES][n]);
+    Keyboard.press(key[n][CODES]);
   } 
   else if (keyx[n].value < keyx[n].max - keyx[n].cushion)
   {
@@ -332,7 +850,7 @@ void releaseKey_2(uint8_t n)
 {
   if (keyx[n].init)
   {
-    Keyboard.release(key[CODES][n]);
+    Keyboard.release(key[n][CODES]);
   } 
   else if (keyx[n].value < keyx[n].min - keyx[n].cushion)
   {
@@ -360,7 +878,7 @@ void balanceKey_2(uint8_t n)
 void processKey_2(uint8_t n) 
 {
   // 不在死区移动时的判断
-  if ((keyx[n].value > keyx[n].min + keyx[n].unit * key[BOTTOM][n]) && (keyx[n].value < keyx[n].max - keyx[n].unit * key[TOP][n]))
+  if ((keyx[n].value > keyx[n].min + keyx[n].unit * key[n][BOTTOM]) && (keyx[n].value < keyx[n].max - keyx[n].unit * key[n][TOP]))
   {
     if (!keyx[n].pressed) 
     {
@@ -387,530 +905,27 @@ void processKey_2(uint8_t n)
   }
 
   // 在死区移动时的判断
-  else if ((keyx[n].value < keyx[n].min + keyx[n].unit * key[BOTTOM][n]) && !keyx[n].pressed)
+  else if ((keyx[n].value < keyx[n].min + keyx[n].unit * key[n][BOTTOM]) && !keyx[n].pressed)
   {
     pressKey_2(n);
   }
-  else if ((keyx[n].value > keyx[n].max - keyx[n].unit * key[TOP][n]) && keyx[n].pressed)
+  else if ((keyx[n].value > keyx[n].max - keyx[n].unit * key[n][TOP]) && keyx[n].pressed)
   {
     releaseKey_2(n);
   }
 }
 
+/************************************** 总扫描 **************************************/
+
 // 扫描一次按键
 void runKey(uint8_t n) 
 {
-  if (key[MODES][n] == 1)
+  if (key[n][CODES])
   {
-    keyx[n].value = analogRead(key[PINS][n]);
-    balanceKey_1(n);
-    processKey_1(n);
-  }
-  else if (key[MODES][n] == 2)
-  {
-    keyx[n].value = analogRead(key[PINS][n]);
-    balanceKey_2(n);
-    processKey_2(n);
-  }
-}
-
-/************************************* 定义页面 *************************************/
-
-//总目录
-enum 
-{
-  M_SLEEP,
-    M_MAIN,
-      M_EDITOR,
-        M_EDIT,
-          M_EDITING,
-          M_CODE,
-            M_ALPH,
-            M_NUMB,
-            M_FUNC,
-            M_MORE,
-          M_MODE,
-      M_MEASURE,
-        M_VOLTAGE,
-      M_SETTINGS,
-        M_CONTROLLER,
-        M_KNOB,
-        M_ABOUT,
-};
-
-//状态
-enum
-{
-  S_NONE,
-  S_DISAPPEAR,
-};
-
-//菜单结构体
-typedef struct MENU
-{
-  char *m_select;
-} M_SELECT;
-
-/************************************* 定义内容 *************************************/
-
-/************************************* 文字内容 *************************************/
-
-M_SELECT main_menu[]
-{
-  {"Sleep"},
-  {"Editor"},
-  {"Measure"},
-  {"Settings"},
-};
-
-M_SELECT editor_menu[]
-{
-  {"<< Main Menu"},
-  {"- Key 0"},
-  {"- Key 1"},
-  {"- Key 2"},
-  {"- Key 3"},
-  {"- Key 4"},
-  {"- Key 5"},
-  {"- Key 6"},
-  {"- Key 7"},
-  {"- Key 8"},
-  {"- Key 9"},
-  {"- All"},
-};
-
-M_SELECT edit_menu[]
-{
-  {"<< Select Keys"},
-  {"- Trigger"},
-  {"- Release"},
-  {"- Top"},
-  {"- Bottom"},
-  {"- Times"},
-  {"- Codes"},
-  {"- Modes"},
-};
-
-M_SELECT code_menu[]
-{
-  {"<< Editor Menu"},
-  {"- Alphabet"},
-  {"- Number"},
-  {"- Function"},
-  {"- More"},
-};
-
-M_SELECT alph_menu[]
-{
-  {"<< Code Category"},
-  {"- a"},
-  {"- b"},
-  {"- c"},
-  {"- d"},
-  {"- e"},
-  {"- f"},
-  {"- g"},
-  {"- h"},
-  {"- i"},
-  {"- j"},
-  {"- k"},
-  {"- l"},
-  {"- m"},
-  {"- n"},
-  {"- o"},
-  {"- p"},
-  {"- q"},
-  {"- r"},
-  {"- s"},
-  {"- t"},
-  {"- u"},
-  {"- v"},
-  {"- w"},
-  {"- x"},
-  {"- y"},
-  {"- z"},
-};
-
-M_SELECT numb_menu[]
-{
-  {"<< Code Category"},
-  {"- 0"},
-  {"- 1"},
-  {"- 2"},
-  {"- 3"},
-  {"- 4"},
-  {"- 5"},
-  {"- 6"},
-  {"- 7"},
-  {"- 8"},
-  {"- 9"},
-};
-
-M_SELECT func_menu[]
-{
-  {"<< Code Category"},
-  {"- F1"},
-  {"- F2"},
-  {"- F3"},
-  {"- F4"},
-  {"- F5"},
-  {"- F6"},
-  {"- F7"},
-  {"- F8"},
-  {"- F9"},
-  {"- F10"},
-  {"- F11"},
-  {"- F12"},
-};
-
-M_SELECT more_menu[]
-{
-  {"<< Code Category"},
-  {"- LEFT CTRL"},
-  {"- RIGHT CTRL"},
-  {"- LEFT SHIFT"},
-  {"- RIGHT SHIFT"},
-  {"- LEFT ALT"},
-  {"- RIGHT ALT"},
-  {"- LEFT GUI"},
-  {"- RIGHT GUI"},
-  {"- UP ARROW"},
-  {"- DOWN ARROW"},
-  {"- LEFT ARROW"},
-  {"- RIGHT ARROW"},
-  {"- BACKSPACE"},
-  {"- TAB"},
-  {"- RETURN"},
-  {"- ESC"},
-  {"- INSERT"},
-  {"- DELETE"},
-  {"- PAGE UP"},
-  {"- PAGE DOWN"},
-  {"- HOME"},
-  {"- END"},
-  {"- CAPS LOCK"},
-};
-
-M_SELECT mode_menu[]
-{
-  {"<< Editor Menu"},
-  {"- Mode 1"},
-  {"- Mode 2"},
-  {"- Disable"},
-};
-
-M_SELECT measure_menu[]
-{
-  {"<< Main Menu"},
-  {"- Key 0 : PA 0"},
-  {"- Key 1 : PA 1"},
-  {"- Key 2 : PA 2"},
-  {"- Key 3 : PA 3"},
-  {"- Key 4 : PA 4"},
-  {"- Key 5 : PA 5"},
-  {"- Key 6 : PA 6"},
-  {"- Key 7 : PA 7"},
-  {"- Key 8 : PB 0"},
-  {"- Key 9 : PB 1"},
-};
-
-M_SELECT settings_menu[]
-{
-  {"<< Main Menu"},
-  {"- Knob Function"},
-  {"- OLED Brightness"},
-  {"- Main Ans Speed"},
-  {"- List Ans Speed"},
-  {"- Volt Ans Speed"},
-  {"- Fade Ans Speed"},
-  {"- Loop Mode"},
-  {"- Switch Style"},
-  {"- Switch Knob"},
-  {"- [ About ]"},
-};
-
-M_SELECT knob_menu[]
-{
-  {"<< Settings Menu"},
-  {"- Volume"},
-  {"- Brightness"},
-  {"- Disable"},
-};
-
-/************************************* 图片内容 *************************************/
-
-//主菜单图片
-PROGMEM const uint8_t main_icon_pic[][120]
-{
-  {
-    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xF1,0x3F,
-    0xFF,0xFF,0xC3,0x3F,0xFF,0xFF,0x87,0x3F,0xFF,0xFF,0x07,0x3F,0xFF,0xFF,0x0F,0x3E,
-    0xFF,0xFF,0x0F,0x3E,0xFF,0xFF,0x0F,0x3C,0xFF,0xFF,0x0F,0x3C,0xFF,0xFF,0x0F,0x38,
-    0xFF,0xFF,0x0F,0x38,0xFF,0xFF,0x0F,0x38,0xFF,0xFF,0x07,0x38,0xFF,0xFF,0x07,0x38,
-    0xFF,0xFF,0x03,0x38,0xF7,0xFF,0x01,0x38,0xE7,0xFF,0x00,0x3C,0x87,0x3F,0x00,0x3C,
-    0x0F,0x00,0x00,0x3E,0x0F,0x00,0x00,0x3E,0x1F,0x00,0x00,0x3F,0x3F,0x00,0x80,0x3F,
-    0x7F,0x00,0xC0,0x3F,0xFF,0x01,0xF0,0x3F,0xFF,0x07,0xFC,0x3F,0xFF,0xFF,0xFF,0x3F,
-    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F
-
-  },
-  {
-    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xF9,0xE7,0x3F,
-    0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,0xFF,0xF0,0xE7,0x3F,0x7F,0xE0,0xE7,0x3F,
-    0x7F,0xE0,0xC3,0x3F,0x7F,0xE0,0xC3,0x3F,0x7F,0xE0,0xC3,0x3F,0x7F,0xE0,0xE7,0x3F,
-    0xFF,0xF0,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,
-    0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xC3,0x3F,0xFF,0xF9,0x81,0x3F,0xFF,0xF0,0x81,0x3F,
-    0xFF,0xF0,0x81,0x3F,0xFF,0xF0,0x81,0x3F,0xFF,0xF9,0x81,0x3F,0xFF,0xF9,0xC3,0x3F,
-    0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,0xFF,0xF9,0xE7,0x3F,0xFF,0xFF,0xFF,0x3F,
-    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F
-  },
-  {
-    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xDF,0x3F,
-    0xFF,0xFF,0x8F,0x3F,0xFF,0xFF,0x07,0x3F,0xFF,0xFF,0x03,0x3E,0xFF,0xFF,0x01,0x3C,
-    0xFF,0xFF,0x00,0x38,0xFF,0x7F,0x40,0x3C,0xFF,0x3F,0x80,0x3E,0xFF,0x1F,0x00,0x3F,
-    0xFF,0x0F,0x88,0x3F,0xFF,0x07,0xD0,0x3F,0xFF,0x03,0xE0,0x3F,0xFF,0x01,0xF1,0x3F,
-    0xFF,0x00,0xFA,0x3F,0x7F,0x00,0xFC,0x3F,0x3F,0x20,0xFE,0x3F,0x1F,0x40,0xFF,0x3F,
-    0x0F,0x80,0xFF,0x3F,0x07,0xC4,0xFF,0x3F,0x0F,0xE8,0xFF,0x3F,0x1F,0xF0,0xFF,0x3F,
-    0x3F,0xF8,0xFF,0x3F,0x7F,0xFC,0xFF,0x3F,0xFF,0xFE,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,
-    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F
-  },
-  {
-    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,
-    0xFF,0x1F,0xFE,0x3F,0xFF,0x1F,0xFE,0x3F,0xFF,0x0C,0xCC,0x3F,0x7F,0x00,0x80,0x3F,
-    0x3F,0x00,0x00,0x3F,0x3F,0xE0,0x01,0x3F,0x7F,0xF8,0x87,0x3F,0x7F,0xFC,0x8F,0x3F,
-    0x3F,0xFC,0x0F,0x3F,0x0F,0x3E,0x1F,0x3C,0x0F,0x1E,0x1E,0x3C,0x0F,0x1E,0x1E,0x3C,
-    0x0F,0x3E,0x1F,0x3C,0x3F,0xFC,0x0F,0x3F,0x7F,0xFC,0x8F,0x3F,0x7F,0xF8,0x87,0x3F,
-    0x3F,0xE0,0x01,0x3F,0x3F,0x00,0x00,0x3F,0x7F,0x00,0x80,0x3F,0xFF,0x0C,0xCC,0x3F,
-    0xFF,0x1F,0xFE,0x3F,0xFF,0x1F,0xFE,0x3F,0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F,
-    0xFF,0xFF,0xFF,0x3F,0xFF,0xFF,0xFF,0x3F
-  },
-};
-
-/************************************* 页面变量 *************************************/
-
-//OLED变量
-uint8_t   *buf_ptr;
-uint16_t  buf_len;
-uint8_t   display_width;
-uint8_t   display_height;
-
-//控制器变量
-struct 
-{
-  uint8_t   select = 0;
-  uint8_t   value[9] = { 100, 25, 25, 25, 15, 1, 0, 0, 0 }; //OLED亮度，主页面动画速度，列表动画速度，电压页面动画速度，消失动画速度，旋钮功能，循环列表，主菜单风格，旋钮方向
-} controller;
-
-//UI变量
-#define     UI_DEPTH             20
-struct 
-{
-  bool      init;
-  uint8_t   num;
-  uint8_t   select[UI_DEPTH];
-  uint8_t   select_last;
-  uint8_t   layer = 0;
-  uint8_t   index = M_SLEEP;
-  uint8_t   state = S_NONE;
-  int16_t   indicator_y; 
-  int16_t   indicator_y_trg;
-  bool      sleep = true;
-  uint8_t   disappear = 1;
-} ui;
-
-//主菜单变量
-#define   ICON_INDICATOR_WIDTH    0   //在128*32分辨率时，图标下方有两个像素的空隙，可以在中心图标下方显示指示器，这是指示器的宽度
-#define   ICON_HEIGHT             30
-#define   ICON_WIDTH              30
-#define   ICON_SPACE              36
-#define   TITLE_HIGH              14
-#define   TITLE_SPACE             36
-#define   TITLE_Y                 77
-#define   TITLE_Y_TRG             58
-#define   TITLE_INDICATOR_WIDTH   7
-#define   TITLE_INDICATOR_HEIGHT  27
-struct 
-{
-  int16_t   icon;
-  int16_t   icon_trg;
-  int16_t   indicator_x = 0; 
-  int16_t   indicator_x_trg = TITLE_INDICATOR_WIDTH;
-  int16_t   title_y;
-  int16_t   title_y_trg;
-  bool      select_flag = false;
-} tile;
-
-//进入主菜单时的初始化
-void main_param_init()
-{
-  switch (controller.value[7])
-  {
-    case 0:
-      ui.init = true;
-      ui.indicator_y = 0;
-      tile.icon = 0;
-      tile.icon_trg = - ui.select[ui.layer] * ICON_SPACE;
-      tile.title_y = 0; 
-      tile.title_y_trg = - ui.select[ui.layer] * TITLE_SPACE;   
-      break;
-
-    case 1:
-      ui.init = false;
-      ui.select_last = ui.select[ui.layer] + 1;
-      tile.icon = 0;
-      tile.icon_trg = ICON_SPACE;
-      tile.title_y = TITLE_Y;
-      tile.title_y_trg = TITLE_Y_TRG;
-      break;
-  }
-}
-
-//列表变量
-#define     LIST_BAR_WIDTH        7
-struct
-{
-  int16_t   y;
-  int16_t   y_trg;
-  int16_t   box_x;
-  int16_t   box_x_trg;
-  int16_t   box_y;
-  int16_t   box_y_trg[UI_DEPTH];
-} list;
-
-//进入更深层级时的初始化
-void list_param_init_in()
-{
-  //每次进入页面都有动画
-  ui.layer++;
-  ui.init = 0;
-  ui.indicator_y = 0;
-  list.y = 0;
-  list.y_trg = 16;
-  list.box_x = 0;
-}
-
-//进入更浅层级时的初始化
-void list_param_init_out()
-{
-  //离开当前页时重置当前页，确保下次来时从头开始
-  ui.select[ui.layer] = 0;
-  list.box_y_trg[ui.layer] = 0;
-
-  //每次进入页面都有动画
-  ui.layer--;
-  ui.init = 0;
-  ui.indicator_y = 0;
-  list.y = 0;
-  list.y_trg = 16;
-  list.box_x = 0;
-}
-
-//电压测量页面
-struct
-{
-  uint8_t   left_space   =   28;
-  uint8_t   right_space  =   28;
-  uint8_t   up_space;
-  uint8_t   down_space;
-  int16_t   left; 
-  int16_t   left_trg; 
-  int16_t   right; 
-  int16_t   right_trg; 
-  int16_t   up; 
-  int16_t   up_trg; 
-  int16_t   down; 
-  int16_t   down_trg; 
-} focus;
-
-//进入电压测量界面的初始化
-void voltage_param_init()
-{
-  //每次进入页面都有动画
-  focus.up_space = focus.down_space = (display_height - 28) / 2;
-  focus.left = 0;  
-  focus.left_trg = focus.left_space; 
-  focus.right = display_width - 1;  
-  focus.right_trg = display_width - focus.right_space - 1; 
-  focus.up = 0; 
-  focus.up_trg = focus.up_space; 
-  focus.down = display_height - 1; 
-  focus.down_trg = display_height - focus.down_space - 1; 
-}
-
-//关于本机页面
-struct
-{
-  int16_t   y;
-  int16_t   y_trg;
-} about;
-
-//进入关于本机界面的初始化
-void about_param_init()
-{
-  //每次进入页面都从头开始
-  about.y = 0;
-  about.y_trg = 0;
-}
-
-/************************************* 旋钮相关 *************************************/
-
-#define   AIO   PB12
-#define   BIO   PB13
-#define   SW    PB14
-
-#define   DEBOUNCE 50
-uint8_t   btn_id = 0;
-uint8_t   btn_flag = 0;
-bool      btn_val = false;
-bool      btn_val_last = false;
-bool      btn_pressed = false;
-bool      CW_1 = false;
-bool      CW_2 = false;
-
-void btn_inter() 
-{
-  bool alv = digitalRead(AIO);
-  bool blv = digitalRead(BIO);
-  if (btn_flag == 0 && alv == LOW) 
-  {
-    CW_1 = blv;
-    btn_flag = 1;
-  }
-  if (btn_flag && alv) 
-  {
-    CW_2 = !blv;
-    if (CW_1 && CW_2)
-     {
-      btn_id = controller.value[8];
-      btn_pressed = true;
-    }
-    if (CW_1 == false && CW_2 == false) 
+    switch (key[n][MODES])
     {
-      btn_id = !controller.value[8];
-      btn_pressed = true;
-    }
-    btn_flag = 0;
-  }
-}
-
-void btn_init() 
-{
-  pinMode(AIO, INPUT);
-  pinMode(BIO, INPUT);
-  pinMode(SW, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(AIO), btn_inter, CHANGE);
-}
-
-void btn_scan() 
-{
-  btn_val = digitalRead(SW);
-  if (btn_val != btn_val_last)
-  {
-    delay(DEBOUNCE);
-    btn_val_last = btn_val;
-    if (btn_val == LOW)
-    {
-      btn_pressed = true;
-      btn_id = 2;
+      case 1: keyx[n].value = analogRead(key[n][PINS]); balanceKey_1(n); processKey_1(n); break;
+      case 2: keyx[n].value = analogRead(key[n][PINS]); balanceKey_2(n); processKey_2(n); break;
     }
   }
 }
@@ -919,914 +934,1078 @@ void btn_scan()
 
 #include <EEPROM.h>
 
-uint8_t   init_check[11] = { 'a', 'b', 'c', 'd', 'e', 'f','g', 'h', 'i', 'j', 'k' }; 
-bool      eeprom_change = false;
-int       address;
+//EEPROM变量
+#define   EEPROM_CHECK        11
+struct
+{
+  bool    init;
+  bool    change;
+  int     address;
+  uint8_t check;
+  uint8_t check_param[EEPROM_CHECK] = { 'a', 'b', 'c', 'd', 'e', 'f','g', 'h', 'i', 'j', 'k' }; 
+} eeprom;
 
-//EEPROM写数据，回到主菜单时执行一遍
+//EEPROM写数据，回到睡眠时执行一遍
 void eeprom_write_all_data()
 {
-  address =  0;  for (uint8_t i = 0; i < 11; ++i) EEPROM.write(address + i, init_check[i]);
-  address += 11; for (uint8_t i = 0; i < 11; ++i) EEPROM.write(address + i, key[0][i]);
-  address += 11; for (uint8_t i = 0; i < 11; ++i) EEPROM.write(address + i, key[1][i]);
-  address += 11; for (uint8_t i = 0; i < 11; ++i) EEPROM.write(address + i, key[2][i]);
-  address += 11; for (uint8_t i = 0; i < 11; ++i) EEPROM.write(address + i, key[3][i]);
-  address += 11; for (uint8_t i = 0; i < 11; ++i) EEPROM.write(address + i, key[4][i]);
-  address += 11; for (uint8_t i = 0; i < 11; ++i) EEPROM.write(address + i, key[5][i]);
-  address += 11; for (uint8_t i = 0; i < 11; ++i) EEPROM.write(address + i, key[6][i]);
-  address += 11; for (uint8_t i = 0; i < 9;  ++i) EEPROM.write(address + i, controller.value[i]);
+  eeprom.address = 0;
+  for (uint8_t i = 0; i < EEPROM_CHECK; ++i)    EEPROM.write(eeprom.address + i, eeprom.check_param[i]);  eeprom.address += EEPROM_CHECK;
+  for (uint8_t i = 0; i < UI_PARAM; ++i)        EEPROM.write(eeprom.address + i, ui.param[i]);            eeprom.address += UI_PARAM;
+  for (uint8_t i = 0; i < KNOB_PARAM; ++i)      EEPROM.write(eeprom.address + i, knob.param[i]);          eeprom.address += KNOB_PARAM;
+
+  for (uint8_t i = 0; i < KEYS; ++i)            EEPROM.write(eeprom.address + i, key[i][TRIGGER]);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            EEPROM.write(eeprom.address + i, key[i][RELEASE]);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            EEPROM.write(eeprom.address + i, key[i][TOP]);            eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            EEPROM.write(eeprom.address + i, key[i][BOTTOM]);         eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            EEPROM.write(eeprom.address + i, key[i][TIMES]);          eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            EEPROM.write(eeprom.address + i, key[i][CODES]);          eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            EEPROM.write(eeprom.address + i, key[i][MODES]);          eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            EEPROM.write(eeprom.address + i, key[i][CODES_P]);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            EEPROM.write(eeprom.address + i, key[i][MODES_P]);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            EEPROM.write(eeprom.address + i, key[i][PINS]);           eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            EEPROM.write(eeprom.address + i, key[i][TRAVEL]);         eeprom.address += KEYS;
 }
 
 //EEPROM读数据，开机初始化时执行一遍
 void eeprom_read_all_data()
 {
-  address =  11; for (uint8_t i = 0; i < 11; ++i) key[0][i] = EEPROM.read(address + i);
-  address += 11; for (uint8_t i = 0; i < 11; ++i) key[1][i] = EEPROM.read(address + i);
-  address += 11; for (uint8_t i = 0; i < 11; ++i) key[2][i] = EEPROM.read(address + i); 
-  address += 11; for (uint8_t i = 0; i < 11; ++i) key[3][i] = EEPROM.read(address + i);
-  address += 11; for (uint8_t i = 0; i < 11; ++i) key[4][i] = EEPROM.read(address + i);
-  address += 11; for (uint8_t i = 0; i < 11; ++i) key[5][i] = EEPROM.read(address + i); 
-  address += 11; for (uint8_t i = 0; i < 11; ++i) key[6][i] = EEPROM.read(address + i);
-  address += 11; for (uint8_t i = 0; i < 9;  ++i) controller.value[i] = EEPROM.read(address + i);
+  eeprom.address = EEPROM_CHECK;   
+  for (uint8_t i = 0; i < UI_PARAM; ++i)        ui.param[i]   = EEPROM.read(eeprom.address + i);          eeprom.address += UI_PARAM;
+  for (uint8_t i = 0; i < KNOB_PARAM; ++i)      knob.param[i] = EEPROM.read(eeprom.address + i);          eeprom.address += KNOB_PARAM;
+
+  for (uint8_t i = 0; i < KEYS; ++i)            key[i][TRIGGER] = EEPROM.read(eeprom.address + i);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            key[i][RELEASE] = EEPROM.read(eeprom.address + i);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            key[i][TOP]     = EEPROM.read(eeprom.address + i);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            key[i][BOTTOM]  = EEPROM.read(eeprom.address + i);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            key[i][TIMES]   = EEPROM.read(eeprom.address + i);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            key[i][CODES]   = EEPROM.read(eeprom.address + i);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            key[i][MODES]   = EEPROM.read(eeprom.address + i);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            key[i][CODES_P] = EEPROM.read(eeprom.address + i);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            key[i][MODES_P] = EEPROM.read(eeprom.address + i);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            key[i][PINS]    = EEPROM.read(eeprom.address + i);        eeprom.address += KEYS;
+  for (uint8_t i = 0; i < KEYS; ++i)            key[i][TRAVEL]  = EEPROM.read(eeprom.address + i);        eeprom.address += KEYS;
 }
 
 //开机检查是否已经修改过，没修改过则跳过读配置步骤，用默认设置
 void eeprom_init()
 {
-  uint8_t check = 0;
-  address = 0;  for (uint8_t i = 0; i < 11; ++i)  if (EEPROM.read(address + i) != init_check[i])  check ++;
-  if (check <= 1) eeprom_read_all_data();
+  eeprom.check = 0;
+  eeprom.address = 0; for (uint8_t i = 0; i < EEPROM_CHECK; ++i)  if (EEPROM.read(eeprom.address + i) != eeprom.check_param[i])  eeprom.check ++;
+  if (eeprom.check <= 1) eeprom_read_all_data();  //允许一位误码
+  else ui_param_init();
+}
+
+/************************************* 旋钮相关 *************************************/
+
+//可按下旋钮引脚
+#define   AIO   PB12
+#define   BIO   PB13
+#define   SW    PB14
+
+//按键ID
+#define   BTN_ID_CC           0   //逆时针旋转
+#define   BTN_ID_CW           1   //顺时针旋转
+#define   BTN_ID_SP           2   //短按
+#define   BTN_ID_LP           3   //长按
+
+//按键变量
+#define   BTN_PARAM_TIMES     2   //由于uint8_t最大值可能不够，但它存储起来方便，这里放大两倍使用
+struct
+{
+  uint8_t   id;
+  bool      flag;
+  bool      pressed;
+  bool      CW_1;
+  bool      CW_2;
+  bool      val;
+  bool      val_last;  
+  bool      alv;  
+  bool      blv;
+  long      count;
+} btn;
+
+void knob_inter() 
+{
+  btn.alv = digitalRead(AIO);
+  btn.blv = digitalRead(BIO);
+  if (!btn.flag && btn.alv == LOW) 
+  {
+    btn.CW_1 = btn.blv;
+    btn.flag = true;
+  }
+  if (btn.flag && btn.alv) 
+  {
+    btn.CW_2 = !btn.blv;
+    if (btn.CW_1 && btn.CW_2)
+     {
+      btn.id = ui.param[KNOB_DIR];
+      btn.pressed = true;
+    }
+    if (btn.CW_1 == false && btn.CW_2 == false) 
+    {
+      btn.id = !ui.param[KNOB_DIR];
+      btn.pressed = true;
+    }
+    btn.flag = false;
+  }
+}
+
+void btn_scan() 
+{
+  btn.val = digitalRead(SW);
+  if (btn.val != btn.val_last)
+  {
+    btn.val_last = btn.val;
+    delay(ui.param[BTN_SPT] * BTN_PARAM_TIMES);
+    btn.val = digitalRead(SW);
+    if (btn.val == LOW)
+    {
+      btn.pressed = true;
+      btn.count = 0;
+      while (!digitalRead(SW))
+      {
+        btn.count++;
+        delay(1);
+      }
+      if (btn.count < ui.param[BTN_LPT] * BTN_PARAM_TIMES)  btn.id = BTN_ID_SP;
+      else  btn.id = BTN_ID_LP;
+    }
+  }
+}
+
+void btn_init() 
+{
+  pinMode(AIO, INPUT);
+  pinMode(BIO, INPUT);
+  pinMode(SW, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(AIO), knob_inter, CHANGE);
+}
+
+/************************************ 初始化函数 ***********************************/
+
+/********************************* 初始化数据处理函数 *******************************/
+
+//显示数值的初始化
+void check_box_v_init(uint8_t *param)
+{
+  check_box.v = param;
+}
+
+//多选框的初始化
+void check_box_m_init(uint8_t *param)
+{
+  check_box.m = param;
+}
+
+//单选框时的初始化
+void check_box_s_init(uint8_t *param, uint8_t *param_p)
+{
+  check_box.s = param;
+  check_box.s_p = param_p;
+}
+
+//多选框处理函数
+void check_box_m_select(uint8_t param)
+{
+  check_box.m[param] = !check_box.m[param];
+  eeprom.change = true;
+}
+
+//单选框处理函数
+void check_box_s_select(uint8_t val, uint8_t pos)
+{
+  *check_box.s = val;
+  *check_box.s_p = pos;
+  eeprom.change = true;
+}
+
+//弹窗数值初始化
+void window_value_init(char title[], uint8_t select, uint8_t *value, uint8_t max, uint8_t min, uint8_t step, MENU *bg, uint8_t index)
+{
+  strcpy(win.title, title);
+  win.select = select;
+  win.value = value;
+  win.max = max;
+  win.min = min;
+  win.step = step;
+  win.bg = bg;
+  win.index = index;  
+  ui.index = M_WINDOW;
+  ui.state = S_WINDOW;
+}
+
+/*********************************** UI 初始化函数 *********************************/
+
+//在初始化EEPROM时，选择性初始化的默认设置
+void ui_param_init()
+{
+  ui.param[DISP_BRI]  = 255;      //屏幕亮度
+  ui.param[TILE_ANI]  = 30;       //磁贴动画速度
+  ui.param[LIST_ANI]  = 60;       //列表动画速度
+  ui.param[WIN_ANI]   = 25;       //弹窗动画速度
+  ui.param[SPOT_ANI]  = 50;       //聚光动画速度
+  ui.param[TAG_ANI]   = 60;       //标签动画速度
+  ui.param[FADE_ANI]  = 30;       //消失动画速度
+  ui.param[BTN_SPT]   = 25;       //按键短按时长
+  ui.param[BTN_LPT]   = 150;      //按键长按时长
+  ui.param[TILE_UFD]  = 1;        //磁贴图标从头展开开关
+  ui.param[LIST_UFD]  = 1;        //菜单列表从头展开开关
+  ui.param[TILE_LOOP] = 0;        //磁贴图标循环模式开关
+  ui.param[LIST_LOOP] = 0;        //菜单列表循环模式开关
+  ui.param[WIN_BOK]   = 0;        //弹窗背景虚化开关
+  ui.param[KNOB_DIR]  = 0;        //旋钮方向切换开关   
+  ui.param[DARK_MODE] = 1;        //黑暗模式开关   
+}
+
+//列表类页面列表行数初始化，必须初始化的参数
+void ui_init()
+{
+  ui.num[M_MAIN]      = sizeof( main_menu     )   / sizeof(M_SELECT);
+  ui.num[M_EDITOR]    = sizeof( editor_menu   )   / sizeof(M_SELECT);
+  ui.num[M_KNOB]      = sizeof( knob_menu     )   / sizeof(M_SELECT);
+  ui.num[M_KRF]       = sizeof( krf_menu      )   / sizeof(M_SELECT);
+  ui.num[M_KEYS]      = sizeof( keys_menu     )   / sizeof(M_SELECT);
+  ui.num[M_KCODE]     = sizeof( kcode_menu    )   / sizeof(M_SELECT);
+  ui.num[M_KMODE]     = sizeof( kmode_menu    )   / sizeof(M_SELECT);
+  ui.num[M_VOLT]      = sizeof( volt_menu     )   / sizeof(M_SELECT);
+  ui.num[M_SETTING]   = sizeof( setting_menu  )   / sizeof(M_SELECT);
+  ui.num[M_ABOUT]     = sizeof( about_menu    )   / sizeof(M_SELECT);   
+}
+
+/********************************* 分页面初始化函数 ********************************/
+
+//进入磁贴类时的初始化
+void tile_param_init()
+{
+  ui.init = false;
+  tile.icon_x = 0;
+  tile.icon_x_trg = TILE_ICON_S;
+  tile.icon_y = -TILE_ICON_H;
+  tile.icon_y_trg = 0;
+  tile.indi_x = 0;
+  tile.indi_x_trg = TILE_INDI_W;
+  tile.title_y = tile.title_y_calc;
+  tile.title_y_trg = tile.title_y_trg_calc;
+}
+
+//进入睡眠时的初始化
+void sleep_param_init()
+{
+  u8g2.setDrawColor(0);
+  u8g2.drawBox(0, 0, DISP_W, DISP_H);
+  u8g2.setPowerSave(1);
+  ui.state = S_NONE;  
+  ui.sleep = true;
+  if (eeprom.change)
+  {
+    eeprom_write_all_data();
+    eeprom.change = false;
+  }
+  key_init();
+}
+
+//电压测量页面初始化
+void volt_param_init()
+{
+  volt.text_bg_r = 0;
+  volt.text_bg_r_trg = VOLT_TEXT_BG_W; 
+}
+
+//设置页初始化
+void setting_param_init()
+{
+  check_box_v_init(ui.param);
+  check_box_m_init(ui.param);
+}
+
+/********************************** 通用初始化函数 *********************************/
+
+/*
+  页面层级管理逻辑是，把所有页面都先当作列表类初始化，不是列表类按需求再初始化对应函数
+  这样做会浪费一些资源，但跳转页面时只需要考虑页面层级，逻辑上更清晰，减少出错
+*/
+
+//弹窗动画初始化
+void window_param_init()
+{
+  win.bar = 0;
+  win.y = WIN_Y;
+  win.y_trg = win.u;
+  ui.state = S_NONE;
+}
+
+//进入更深层级时的初始化
+void layer_init_in()
+{
+  ui.layer ++;
+  ui.init = 0;
+  list.y = 0;
+  list.y_trg = LIST_LINE_H;
+  list.box_x = 0;
+  list.box_y = 0;
+  list.bar_y = 0;
+  ui.state = S_FADE;
+  switch (ui.index)
+  {
+    case M_MAIN:    tile_param_init();    break;  //睡眠进入主菜单，动画初始化   
+    case M_VOLT:    volt_param_init();    break;  //主菜单进入电压测量页，动画初始化
+    case M_SETTING: setting_param_init(); break;  //主菜单进入设置页，单选框初始化
+  }
+}
+
+//进入更浅层级时的初始化
+void layer_init_out()
+{
+  ui.select[ui.layer] = 0;
+  list.box_y_trg[ui.layer] = 0;
+  ui.layer --;
+  ui.init = 0;
+  list.y = 0;
+  list.y_trg = LIST_LINE_H;
+  list.bar_y = 0;
+  ui.state = S_FADE;
+  switch (ui.index)
+  {
+    case M_SLEEP: sleep_param_init(); break;    //主菜单进入睡眠页，检查是否需要写EEPROM
+    case M_MAIN:  tile_param_init();  break;    //不管什么页面进入主菜单时，动画初始化
+  }
 }
 
 /************************************* 动画函数 *************************************/
 
-//移动函数
-void move(int16_t *a, int16_t *a_trg, uint8_t n)
+//动画函数
+void animation(float *a, float *a_trg, uint8_t n)
 {
-  if (*a < *a_trg) *a += ceil(fabs((float)(*a_trg - *a) / (controller.value[n] / 10.0)));
-  else if (*a > *a_trg) *a -= ceil(fabs((float)(*a_trg - *a) / (controller.value[n] / 10.0)));
+  if (fabs(*a - *a_trg) < 0.15) *a = *a_trg;
+  if (*a != *a_trg) *a += (*a_trg - *a) / (ui.param[n] / 10.0);
 }
 
 //消失函数
-void disappear()
+void fade()
 {
-  delay(controller.value[4]);
-  switch (ui.disappear)
+  delay(ui.param[FADE_ANI]);
+  if (ui.param[DARK_MODE])
   {
-    case 1: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 == 0) buf_ptr[i] = buf_ptr[i] & 0x55; break;
-    case 2: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 != 0) buf_ptr[i] = buf_ptr[i] & 0xAA; break;
-    case 3: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 == 0) buf_ptr[i] = buf_ptr[i] & 0x00; break;
-    case 4: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 != 0) buf_ptr[i] = buf_ptr[i] & 0x00; break;
-    default: ui.state = S_NONE; ui.disappear = 0; break;
+    switch (ui.fade)
+    {
+      case 1: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 != 0) buf_ptr[i] = buf_ptr[i] & 0xAA; break;
+      case 2: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 != 0) buf_ptr[i] = buf_ptr[i] & 0x00; break;
+      case 3: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 == 0) buf_ptr[i] = buf_ptr[i] & 0x55; break;
+      case 4: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 == 0) buf_ptr[i] = buf_ptr[i] & 0x00; break;
+      default: ui.state = S_NONE; ui.fade = 0; break;
+    }
   }
-  ui.disappear++;
+  else
+  {
+    switch (ui.fade)
+    {
+      case 1: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 != 0) buf_ptr[i] = buf_ptr[i] | 0xAA; break;
+      case 2: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 != 0) buf_ptr[i] = buf_ptr[i] | 0x00; break;
+      case 3: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 == 0) buf_ptr[i] = buf_ptr[i] | 0x55; break;
+      case 4: for (uint16_t i = 0; i < buf_len; ++i)  if (i % 2 == 0) buf_ptr[i] = buf_ptr[i] | 0x00; break;
+      default: ui.state = S_NONE; ui.fade = 0; break;
+    }    
+  }
+  ui.fade++;
 }
 
 /************************************* 显示函数 *************************************/
 
-/********************************** 列表风格主菜单 ***********************************/
-
-//主菜单列表风格显示函数
-void main_show_list()
+//磁贴类页面通用显示函数
+void tile_show(struct MENU arr_1[], const uint8_t icon_pic[][120])
 {
-  u8g2.setFont(u8g2_font_crox4hb_tr); 
-  ui.indicator_y_trg = ceil((ui.select[ui.layer]) * ((float)display_height / (ui.num - 1)));
-  move(&tile.icon, &tile.icon_trg, 1);
-  move(&tile.title_y, &tile.title_y_trg, 1);
-  move(&ui.indicator_y, &ui.indicator_y_trg, 1);
-  u8g2.drawBox(display_width - TITLE_INDICATOR_WIDTH, 0, TITLE_INDICATOR_WIDTH, ui.indicator_y);
-  for(uint8_t i = 0 ; i < ui.num ; ++ i)  
-  {
-    u8g2.drawXBMP(0, tile.icon + i * ICON_SPACE + 1 + (display_height - ICON_HEIGHT) / 2, ICON_WIDTH, ICON_HEIGHT, main_icon_pic[i]);
-    u8g2.drawStr(((display_width - u8g2.getStrWidth(main_menu[i].m_select)) / 2)  + ceil((float)(ICON_WIDTH - TITLE_INDICATOR_WIDTH) / 2), tile.title_y + (i + 1) * TITLE_SPACE - TITLE_HIGH  + (display_height - ICON_HEIGHT) / 2, main_menu[i].m_select);
-  }
-}
+  //计算动画过渡值
+  animation(&tile.icon_x, &tile.icon_x_trg, TILE_ANI);
+  animation(&tile.icon_y, &tile.icon_y_trg, TILE_ANI);
+  animation(&tile.indi_x, &tile.indi_x_trg, TILE_ANI);
+  animation(&tile.title_y, &tile.title_y_trg, TILE_ANI);
 
-/************************************* 图标主菜单 *************************************/
+  //设置大标题的颜色，0透显，1实显，2反色，这里都用实显
+  u8g2.setDrawColor(1);
 
-//主菜单图标风格显示函数
-void main_show_icon()
-{
-  u8g2.setFont(u8g2_font_helvB18_tf); 
-  move(&tile.icon, &tile.icon_trg, 1);
-  if (ui.select[ui.layer] != ui.select_last)  
-  {
-    move(&tile.indicator_x, &tile.indicator_x_trg, 1);
-    move(&tile.title_y, &tile.title_y_trg, 1);
-  }
-  if (tile.select_flag)
-  {
-    tile.indicator_x = TITLE_INDICATOR_WIDTH;
-    tile.title_y = TITLE_Y_TRG;
-  }
-  if (tile.icon == tile.icon_trg && tile.indicator_x ==  tile.indicator_x_trg && tile.title_y ==  tile.title_y_trg)  ui.select_last = ui.select[ui.layer];
-  switch (display_height)
-  {
-    case 32: 
-      u8g2.drawBox((display_width - ICON_INDICATOR_WIDTH) / 2, 31, ICON_INDICATOR_WIDTH, 1);
-      break;
+  //绘制大标题
+  u8g2.setFont(TILE_B_FONT); 
+  u8g2.drawStr(((DISP_W - TILE_INDI_W) - u8g2.getStrWidth(arr_1[ui.select[ui.layer]].m_select)) / 2 + TILE_INDI_W, tile.title_y, arr_1[ui.select[ui.layer]].m_select);
 
-    case 64: 
-      u8g2.drawBox(0, display_height - TITLE_INDICATOR_HEIGHT - 1, tile.indicator_x, TITLE_INDICATOR_HEIGHT);
-      u8g2.drawStr(((display_width - u8g2.getStrWidth(main_menu[ui.select[ui.layer]].m_select)) / 2) + TITLE_INDICATOR_WIDTH, tile.title_y, main_menu[ui.select[ui.layer]].m_select);
-      break; 
-  }
+  //绘制大标题指示器
+  u8g2.drawBox(0, TILE_ICON_S, tile.indi_x, TILE_INDI_H);
+
+  //绘制图标
   if (!ui.init)
   {
-    for(uint8_t i = 0 ; i < ui.num ; ++ i)  u8g2.drawXBMP((display_width - ICON_WIDTH) / 2 + (i - ui.select[ui.layer]) * tile.icon, 0, ICON_WIDTH, ICON_HEIGHT, main_icon_pic[i]);
-    if (tile.icon == tile.icon_trg) 
+    for (uint8_t i = 0; i < ui.num[ui.index]; ++i)  
+    {
+      if (ui.param[TILE_UFD]) tile.temp = (DISP_W - TILE_ICON_W) / 2 + i * tile.icon_x - TILE_ICON_S * ui.select[ui.layer];
+      else tile.temp = (DISP_W - TILE_ICON_W) / 2 + (i - ui.select[ui.layer]) * tile.icon_x;
+      u8g2.drawXBMP(tile.temp, (int16_t)tile.icon_y, TILE_ICON_W, TILE_ICON_H, icon_pic[i]); 
+    }
+    if (tile.icon_x == tile.icon_x_trg) 
     {
       ui.init = true;
-      tile.icon = tile.icon_trg = - ui.select[ui.layer] * ICON_SPACE;
+      tile.icon_x = tile.icon_x_trg = - ui.select[ui.layer] * TILE_ICON_S;
     }
   }
-  else  for(uint8_t i = 0 ; i < ui.num ; ++ i)  u8g2.drawXBMP((display_width - ICON_WIDTH) / 2 + tile.icon + i * ICON_SPACE, 0, ICON_WIDTH, ICON_HEIGHT, main_icon_pic[i]); 
+  else for (uint8_t i = 0; i < ui.num[ui.index]; ++i) u8g2.drawXBMP((DISP_W - TILE_ICON_W) / 2 + (int16_t)tile.icon_x + i * TILE_ICON_S, 0, TILE_ICON_W, TILE_ICON_H, icon_pic[i]);
+
+  //反转屏幕内元素颜色，白天模式遮罩
+  u8g2.setDrawColor(2);
+  if (!ui.param[DARK_MODE]) u8g2.drawBox(0, 0, DISP_W, DISP_H);
 }
 
-/*************************************************************************************/
+/*************** 根据列表每行开头符号，判断每行尾部是否绘制以及绘制什么内容 *************/
+
+//列表显示显示数值
+void list_draw_value(int n) { u8g2.print(check_box.v[n - 1]); }
+
+//绘制外框
+void list_draw_check_box_frame() { u8g2.drawRFrame(CHECK_BOX_L_S, list.temp + CHECK_BOX_U_S, CHECK_BOX_F_W, CHECK_BOX_F_H, 1); }
+
+//绘制框里面的点
+void list_draw_check_box_dot() { u8g2.drawBox(CHECK_BOX_L_S + CHECK_BOX_D_S + 1, list.temp + CHECK_BOX_U_S + CHECK_BOX_D_S + 1, CHECK_BOX_F_W - (CHECK_BOX_D_S + 1) * 2, CHECK_BOX_F_H - (CHECK_BOX_D_S + 1) * 2); }
+
+//列表显示旋钮功能
+void list_draw_krf(int n) 
+{ 
+  switch (check_box.v[n - 1])
+  {
+    case 0: u8g2.print("OFF"); break;
+    case 1: u8g2.print("VOL"); break;
+    case 2: u8g2.print("BRI"); break;
+  }
+}
+
+//列表显示按键模式
+void list_draw_kmode(int n) 
+{ 
+  switch (check_box.v[n - 1])
+  {
+    case 1: u8g2.print("M 1"); break;
+    case 2: u8g2.print("M 2"); break;
+  }
+}
+
+//列表显示按键键值
+void list_draw_kcode(int n) 
+{ 
+  if (check_box.v[n - 1] == 0) u8g2.print("OFF");
+  else if (check_box.v[n - 1] <= 90) u8g2.print((char)check_box.v[n - 1]);
+  else u8g2.print("?");
+}
+
+//判断列表尾部内容
+void list_draw_text_and_check_box(struct MENU arr[], int i)
+{
+  u8g2.drawStr(LIST_TEXT_S, list.temp + LIST_TEXT_H + LIST_TEXT_S, arr[i].m_select);
+  u8g2.setCursor(CHECK_BOX_L_S, list.temp + LIST_TEXT_H + LIST_TEXT_S);
+  switch (arr[i].m_select[0])
+  {
+    case '~': list_draw_value(i); break;
+    case '+': list_draw_check_box_frame(); if (check_box.m[i - 1] == 1)  list_draw_check_box_dot(); break;
+    case '=': list_draw_check_box_frame(); if (*check_box.s_p == i)      list_draw_check_box_dot(); break;
+    case '#': list_draw_krf(i);   break;
+    case '&': list_draw_kmode(i); break;
+    case '$': list_draw_kcode(i); break;
+  }
+}
+
+/******************************** 列表显示函数 **************************************/
 
 //列表类页面通用显示函数
-void menu_ui_show(struct MENU arr[])
+void list_show(struct MENU arr[], uint8_t ui_index)
 {
-  u8g2.setFont(u8g2_font_wqy12_t_chinese1);
-  ui.indicator_y_trg = ceil((ui.select[ui.layer]) * ((float)display_height / (ui.num - 1)));
-  list.box_x_trg = u8g2.getStrWidth(arr[ui.select[ui.layer]].m_select) + 8;
-  move(&list.y, &list.y_trg, 2);
-  move(&list.box_x, &list.box_x_trg, 2);
-  move(&list.box_y, &list.box_y_trg[ui.layer], 2);
-  move(&ui.indicator_y, &ui.indicator_y_trg, 2);
+  //更新动画目标值
+  u8g2.setFont(LIST_FONT);
+  list.box_x_trg = u8g2.getStrWidth(arr[ui.select[ui.layer]].m_select) + LIST_TEXT_S * 2;
+  list.bar_y_trg = ceil((ui.select[ui.layer]) * ((float)DISP_H / (ui.num[ui_index] - 1)));
+  
+  //计算动画过渡值
+  animation(&list.y, &list.y_trg, LIST_ANI);
+  animation(&list.box_x, &list.box_x_trg, LIST_ANI);
+  animation(&list.box_y, &list.box_y_trg[ui.layer], LIST_ANI);
+  animation(&list.bar_y, &list.bar_y_trg, LIST_ANI);
+
+  //检查循环动画是否结束
+  if (list.loop && list.box_y == list.box_y_trg[ui.layer]) list.loop = false;
+
+  //设置文字和进度条颜色，0透显，1实显，2反色，这里都用实显
+  u8g2.setDrawColor(1);
+  
+  //绘制进度条
+  u8g2.drawHLine(DISP_W - LIST_BAR_W, 0, LIST_BAR_W);
+  u8g2.drawHLine(DISP_W - LIST_BAR_W, DISP_H - 1, LIST_BAR_W);
+  u8g2.drawVLine(DISP_W - ceil((float)LIST_BAR_W / 2), 0, DISP_H);
+  u8g2.drawBox(DISP_W - LIST_BAR_W, 0, LIST_BAR_W, list.bar_y);
+
+  //绘制列表文字  
   if (!ui.init)
   {
-    for (uint8_t i = 0 ; i < ui.num ; ++ i) u8g2.drawStr(4, 12 + (i - ui.select[ui.layer]) * list.y + list.box_y_trg[ui.layer], arr[i].m_select);
+    for (int i = 0; i < ui.num[ui_index]; ++ i)
+    {
+      if (ui.param[LIST_UFD]) list.temp = i * list.y - LIST_LINE_H * ui.select[ui.layer] + list.box_y_trg[ui.layer];
+      else list.temp = (i - ui.select[ui.layer]) * list.y + list.box_y_trg[ui.layer];
+      list_draw_text_and_check_box(arr, i);
+    }
     if (list.y == list.y_trg) 
     {
       ui.init = true;
-      list.y = list.y_trg = - 16 * ui.select[ui.layer] + list.box_y_trg[ui.layer];
+      list.y = list.y_trg = - LIST_LINE_H * ui.select[ui.layer] + list.box_y_trg[ui.layer];
     }
   }
-  else for (uint8_t i = 0 ; i < ui.num ; ++ i) u8g2.drawStr(4, 16 * i + list.y + 12, arr[i].m_select);
-  u8g2.drawBox(display_width - LIST_BAR_WIDTH, 0, LIST_BAR_WIDTH, ui.indicator_y);
+  else for (int i = 0; i < ui.num[ui_index]; ++ i)
+  {
+    list.temp = LIST_LINE_H * i + list.y;
+    list_draw_text_and_check_box(arr, i);
+  }
+
+  //绘制文字选择框，0透显，1实显，2反色，这里用反色
   u8g2.setDrawColor(2);
-  u8g2.drawRBox(0, list.box_y, list.box_x, 16, 1);
-  u8g2.setDrawColor(1);
-}
+  u8g2.drawRBox(0, list.box_y, list.box_x, LIST_LINE_H, LIST_BOX_R);
 
-//正在编辑界面显示函数
-void editing_show()
-{
-  uint8_t editing_up_space = (display_height - 32) / 2;
-  u8g2.setDrawColor(0);
-  u8g2.drawRBox(12, editing_up_space, 104, 32, 8);
-  u8g2.setDrawColor(1);
-  u8g2.drawRFrame(12, editing_up_space, 104, 32, 8);
-  u8g2.drawRFrame(18, editing_up_space + 19, 92, 8, 3);
-  float width = (float)(key[ui.select[ui.layer] - 1][ui.select[ui.layer - 1] - 1]) / (float)(key[TRAVEL][ui.select[ui.layer - 1] - 1]) * 86;
-  if (width) u8g2.drawRBox(20, editing_up_space + 21, width + 2, 4, 1);
-  u8g2.setCursor(20, editing_up_space + 14);
-  switch (ui.select[ui.layer])
+  //反转屏幕内元素颜色，白天模式遮罩，在这里屏蔽有列表参与的页面，使遮罩作用在那个页面上
+  if (!ui.param[DARK_MODE])
   {
-    case 1: u8g2.print("Trigger");  break;
-    case 2: u8g2.print("Release");  break;
-    case 3: u8g2.print("Top");      break;
-    case 4: u8g2.print("Bottom");   break;
-    case 5: u8g2.print("Times");    break;
-  }
-  u8g2.setCursor(96, editing_up_space + 14);
-  u8g2.print(key[ui.select[ui.layer] - 1][ui.select[ui.layer - 1] - 1]);
-}
-
-//控制器正在编辑界面显示函数
-void controller_show()
-{
-  uint8_t max_value;
-  uint8_t cursor_pos;
-  switch (controller.select)
-  {
-    case 0: max_value = 255;  cursor_pos = 90;  break;
-    case 1: max_value = 90;   cursor_pos = 96;  break;
-    case 2: max_value = 90;   cursor_pos = 96;  break;
-    case 3: max_value = 90;   cursor_pos = 96;  break;
-    case 4: max_value = 50;   cursor_pos = 96;  break;
-  }
-  uint8_t editing_up_space = (display_height - 32) / 2;
-  u8g2.setDrawColor(0);
-  u8g2.drawRBox(12, editing_up_space, 104, 32, 8);
-  u8g2.setDrawColor(1);
-  u8g2.drawRFrame(12, editing_up_space, 104, 32, 8);
-  u8g2.drawRFrame(18, editing_up_space + 19, 92, 8, 3);
-  float width = (float)controller.value[controller.select] / (float)max_value * 85;
-  if (width) u8g2.drawRBox(20, editing_up_space + 21, width + 3, 4, 1);
-  u8g2.setCursor(20, editing_up_space + 14);
-  switch (ui.select[ui.layer])
-  {
-    case 2: u8g2.print("Brightness"); break;
-    case 3: u8g2.print("Main Speed"); break;
-    case 4: u8g2.print("List Speed"); break;
-    case 5: u8g2.print("Volt Speed"); break;
-    case 6: u8g2.print("Fade Speed"); break;
-  }
-  u8g2.setCursor(cursor_pos, editing_up_space + 14);
-  u8g2.print(controller.value[controller.select]);
-}
-
-//电压测量页面显示函数
-void voltage_show()
-{
-  move(&focus.left, &focus.left_trg, 3);
-  move(&focus.right, &focus.right_trg, 3);
-  move(&focus.up, &focus.up_trg, 3);
-  move(&focus.down, &focus.down_trg, 3);
-  u8g2.setDrawColor(0);
-  u8g2.setFont(u8g2_font_crox4hb_tr);
-  u8g2.drawBox(0, 0, display_width, display_height);
-  u8g2.setDrawColor(1);
-  u8g2.drawRBox(focus.left, focus.up, focus.right - focus.left, focus.down - focus.up, 8);
-  float pin_val = analogRead(key[PINS][ui.select[ui.layer - 1] - 1]);
-  float pin_vol = (pin_val / 4096) * 3.3;
-  u8g2.setDrawColor(0);
-  u8g2.setCursor(36, focus.up_space + 21);
-  u8g2.print(pin_vol);
-  u8g2.print(" v");
-  u8g2.setDrawColor(1);
-}
-
-//关于本机界面显示函数
-void about_show()
-{
-  move(&about.y, &about.y_trg, 2);
-  u8g2.setFont(u8g2_font_t0_11_tf);
-  u8g2.setCursor(0, 10 - about.y);
-  u8g2.print("K");  
-  u8g2.setCursor(10 + 16 * 0, 10 - about.y);
-  u8g2.print("TR");
-  u8g2.setCursor(10 + 16 * 1, 10 - about.y);
-  u8g2.print("RL");
-  u8g2.setCursor(10 + 16 * 2, 10 - about.y);
-  u8g2.print("TP");
-  u8g2.setCursor(10 + 16 * 3, 10 - about.y);
-  u8g2.print("BT");
-  u8g2.setCursor(10 + 16 * 4, 10 - about.y);
-  u8g2.print("TM");
-  u8g2.setCursor(10 + 16 * 5, 10 - about.y);
-  u8g2.print("MD");
-  u8g2.setCursor(10 + 16 * 6, 10 - about.y);
-  u8g2.print("CD");
-  for (uint8_t i = 0; i < 7; ++i)  u8g2.drawBox(8 + 16 * i, 0 - about.y, 1, 130);
-  for (uint8_t j = 0; j < 10; ++j)
-  {
-    u8g2.setCursor(0, 22 + 12 * j - about.y);
-    u8g2.print(j);
-    for (uint8_t i = 0; i < 7; ++i)
+    u8g2.drawBox(0, 0, DISP_W, DISP_H);
+    switch(ui.index)
     {
-      u8g2.setCursor(10 + 16 * i, 22 + 12 * j - about.y);
-      if (i == 5) u8g2.print(key[6][j]);
-      else if (i == 6) u8g2.print(key[5][j]);
-      else u8g2.print(key[i][j]);
+      case M_WINDOW: 
+      case M_VOLT:
+      u8g2.drawBox(0, 0, DISP_W, DISP_H);  
     }
   }
+}
+
+//电压页面显示函数
+void volt_show()
+{
+  //使用列表类显示选项
+  list_show(volt_menu, M_VOLT); 
+
+  //计算动画过渡值  
+  animation(&volt.text_bg_r, &volt.text_bg_r_trg, TAG_ANI);
+
+  //设置曲线颜色，0透显，1实显，2反色，这里都用实显
+  u8g2.setDrawColor(1);  
+
+  //绘制电压曲线和外框
+  volt.val = 0;
+  u8g2.drawFrame(WAVE_BOX_L_S, 0, WAVE_BOX_W, WAVE_BOX_H);
+  u8g2.drawFrame(WAVE_BOX_L_S + 1, 1, WAVE_BOX_W - 2, WAVE_BOX_H - 2);
+  if (list.box_y == list.box_y_trg[ui.layer] && list.y == list.y_trg)
+  {
+    for (int i = 0; i < WAVE_SAMPLE * WAVE_W; i++) volt.ch0_adc[i] = volt.val = analogRead(analog_pin[ui.select[ui.layer]]);
+    for (int i = 1; i < WAVE_W - 1; i++)
+    { 
+      volt.ch0_wave[i] = map(volt.ch0_adc[int(5 * i)], 0, 4095, WAVE_MAX, WAVE_MIN);   
+      u8g2.drawLine(WAVE_L + i - 1, WAVE_U + volt.ch0_wave[i - 1], WAVE_L + i, WAVE_U + volt.ch0_wave[i]);
+    }
+  }
+
+  //绘制电压值
+  u8g2.setFontDirection(0);
+  u8g2.setFont(VOLT_FONT); 
+  u8g2.setCursor(39, DISP_H - 6);
+  u8g2.print(volt.val / 4096.0 * 3.3);
+  u8g2.print("V");
+
+  //绘制列表选择框和电压文字背景
+  u8g2.setDrawColor(2);
+  u8g2.drawBox(VOLT_TEXT_BG_L_S, DISP_H - VOLT_TEXT_BG_H, volt.text_bg_r, VOLT_TEXT_BG_H);
+
+  //反转屏幕内元素颜色，白天模式遮罩
+  if (!ui.param[DARK_MODE]) u8g2.drawBox(0, 0, DISP_W, DISP_H);
+}
+
+//弹窗通用显示函数
+void window_show()
+{
+  //绘制背景列表，根据开关判断背景是否要虚化
+  list_show(win.bg, win.index);
+  if (ui.param[WIN_BOK]) for (uint16_t i = 0; i < buf_len; ++i)  buf_ptr[i] = buf_ptr[i] & (i % 2 == 0 ? 0x55 : 0xAA);
+
+  //更新动画目标值
+  u8g2.setFont(WIN_FONT);
+  win.bar_trg = (float)(*win.value - win.min) / (float)(win.max - win.min) * (WIN_BAR_W - 4);
+
+  //计算动画过渡值
+  animation(&win.bar, &win.bar_trg, WIN_ANI);
+  animation(&win.y, &win.y_trg, WIN_ANI);
+
+  //绘制窗口
+  u8g2.setDrawColor(0); u8g2.drawRBox(win.l, (int16_t)win.y, WIN_W, WIN_H, 2);    //绘制外框背景
+  u8g2.setDrawColor(1); u8g2.drawRFrame(win.l, (int16_t)win.y, WIN_W, WIN_H, 2);  //绘制外框描边
+  u8g2.drawRFrame(win.l + 5, (int16_t)win.y + 20, WIN_BAR_W, WIN_BAR_H, 1);       //绘制进度条外框
+  u8g2.drawBox(win.l + 7, (int16_t)win.y + 22, win.bar, WIN_BAR_H - 4);           //绘制进度条
+  u8g2.setCursor(win.l + 5, (int16_t)win.y + 14); u8g2.print(win.title);          //绘制标题
+  u8g2.setCursor(win.l + 78, (int16_t)win.y + 14); u8g2.print(*win.value);        //绘制当前值
+  
+  //需要在窗口修改参数时立即见效的函数
+  if (!strcmp(win.title, "Disp Bri")) u8g2.setContrast(ui.param[DISP_BRI]);
+
+  //反转屏幕内元素颜色，白天模式遮罩
+  u8g2.setDrawColor(2);
+  if (!ui.param[DARK_MODE]) u8g2.drawBox(0, 0, DISP_W, DISP_H);
 }
 
 /************************************* 处理函数 *************************************/
 
-//列表类页面旋转时判断通用函数
-void rotate_switch()
-{
-  switch (btn_id)
-  {
-    case 0:
-      if (ui.select[ui.layer] == 0)
-      {
-        if (controller.value[6])
-        {
-          ui.select[ui.layer] = ui.num - 1;
-          list.y_trg =  - 16 * (ui.num - display_height / 16);
-          list.box_y_trg[ui.layer] = (display_height / 16 - 1) * 16;
-          break;
-        }
-        else  break;
-      }
-      if (ui.init)
-      {
-        ui.select[ui.layer] -= 1;
-        if (ui.select[ui.layer] < -(list.y / 16)) list.y_trg += 16;
-        else list.box_y_trg[ui.layer] -= 16;
-        break;
-      }
+/*********************************** 通用处理函数 ***********************************/
 
-    case 1:
-      if (ui.select[ui.layer] == (ui.num - 1))
-      {
-        if (controller.value[6])
-        {
-          ui.select[ui.layer] = 0;
-          list.y_trg = 0;
-          list.box_y_trg[ui.layer] = 0;
-          break;
-        }
-        else  break;
-      }
+//磁贴类页面旋转时判断通用函数
+void tile_rotate_switch()
+{
+  switch (btn.id)
+  { 
+    case BTN_ID_CC:
       if (ui.init)
       {
-        ui.select[ui.layer] += 1;
-        if ((ui.select[ui.layer] + 1) > (display_height / 16 - list.y / 16)) list.y_trg -= 16;
-        else list.box_y_trg[ui.layer] += 16;
-        break;
+        if (ui.select[ui.layer] > 0)
+        {
+          ui.select[ui.layer] -= 1;
+          tile.icon_x_trg += TILE_ICON_S;
+          tile.select_flag = false;
+        }
+        else 
+        {
+          if (ui.param[TILE_LOOP])
+          {
+            ui.select[ui.layer] = ui.num[ui.index] - 1;
+            tile.icon_x_trg = - TILE_ICON_S * (ui.num[ui.index] - 1);
+            break;
+          }
+          else tile.select_flag = true;
+        }
+      }
+      break;
+
+    case BTN_ID_CW:
+      if (ui.init)
+      {
+        if (ui.select[ui.layer] < (ui.num[ui.index] - 1)) 
+        {
+          ui.select[ui.layer] += 1;
+          tile.icon_x_trg -= TILE_ICON_S;
+          tile.select_flag = false;
+        }
+        else 
+        {
+          if (ui.param[TILE_LOOP])
+          {
+            ui.select[ui.layer] = 0;
+            tile.icon_x_trg = 0;
+            break;
+          }
+          else tile.select_flag = true;
+        }
       }
       break;
   }
 }
+
+//列表类页面旋转时判断通用函数
+void list_rotate_switch()
+{
+  if (!list.loop)
+  {
+    switch (btn.id)
+    {
+      case BTN_ID_CC:
+        if (ui.select[ui.layer] == 0)
+        {
+          if (ui.param[LIST_LOOP] && ui.init)
+          {
+            list.loop = true;
+            ui.select[ui.layer] = ui.num[ui.index] - 1;
+            if (ui.num[ui.index] > list.line_n) 
+            {
+              list.box_y_trg[ui.layer] = DISP_H - LIST_LINE_H;
+              list.y_trg = DISP_H - ui.num[ui.index] * LIST_LINE_H;
+            }
+            else list.box_y_trg[ui.layer] = (ui.num[ui.index] - 1) * LIST_LINE_H;
+            break;
+          }
+          else break;
+        }
+        if (ui.init)
+        {
+          ui.select[ui.layer] -= 1;
+          if (ui.select[ui.layer] < - (list.y_trg / LIST_LINE_H)) 
+          {
+            if (!(DISP_H % LIST_LINE_H)) list.y_trg += LIST_LINE_H;
+            else
+            {
+              if (list.box_y_trg[ui.layer] == DISP_H - LIST_LINE_H * list.line_n)
+              {
+                list.y_trg += (list.line_n + 1) * LIST_LINE_H - DISP_H;
+                list.box_y_trg[ui.layer] = 0;
+              }
+              else if (list.box_y_trg[ui.layer] == LIST_LINE_H)
+              {
+                list.box_y_trg[ui.layer] = 0;
+              }
+              else list.y_trg += LIST_LINE_H;
+            }
+          }
+          else list.box_y_trg[ui.layer] -= LIST_LINE_H;
+          break;
+        }
+
+      case BTN_ID_CW:
+        if (ui.select[ui.layer] == (ui.num[ui.index] - 1))
+        {
+          if (ui.param[LIST_LOOP] && ui.init)
+          {
+            list.loop = true;
+            ui.select[ui.layer] = 0;
+            list.y_trg = 0;
+            list.box_y_trg[ui.layer] = 0;
+            break;
+          }
+          else break;
+        }
+        if (ui.init)
+        {
+          ui.select[ui.layer] += 1;
+          if ((ui.select[ui.layer] + 1) > (list.line_n - list.y_trg / LIST_LINE_H))
+          {
+            if (!(DISP_H % LIST_LINE_H)) list.y_trg -= LIST_LINE_H;
+            else
+            {
+              if (list.box_y_trg[ui.layer] == LIST_LINE_H * (list.line_n - 1))
+              {
+                list.y_trg -= (list.line_n + 1) * LIST_LINE_H - DISP_H;
+                list.box_y_trg[ui.layer] = DISP_H - LIST_LINE_H;
+              }
+              else if (list.box_y_trg[ui.layer] == DISP_H - LIST_LINE_H * 2)
+              {
+                list.box_y_trg[ui.layer] = DISP_H - LIST_LINE_H;
+              }
+              else list.y_trg -= LIST_LINE_H;
+            }
+          }
+          else list.box_y_trg[ui.layer] += LIST_LINE_H;
+          break;
+        }
+        break;
+    }
+  }
+}
+
+//弹窗通用处理函数
+void window_proc()
+{
+  window_show();
+  if (win.y == WIN_Y_TRG) ui.index = win.index;
+  if (btn.pressed && win.y == win.y_trg && win.y != WIN_Y_TRG)
+  {
+    btn.pressed = false;
+    switch (btn.id)
+    {
+      case BTN_ID_CW: if (*win.value < win.max)  *win.value += win.step;  eeprom.change = true;  break;
+      case BTN_ID_CC: if (*win.value > win.min)  *win.value -= win.step;  eeprom.change = true;  break;  
+      case BTN_ID_SP: case BTN_ID_LP: win.y_trg = WIN_Y_TRG; break;
+    }
+  }
+}
+
+/********************************** 分页面处理函数 **********************************/
 
 //睡眠页面处理函数
 void sleep_proc()
 {
   while (ui.sleep)
   {
-    //按键扫描
-    for (int n = 0; n < KEYS; n++) runKey(n);
+    //睡眠时循环执行的函数
+    for (uint8_t n = 0; n < KEYS; n++) runKey(n);
 
-    //旋钮扫描
+    //睡眠时需要扫描旋钮才能退出睡眠
     btn_scan();
-    if (btn_pressed)
-    {
-      btn_pressed = false;
 
-      switch (btn_id)
-      {
-        case 0: //顺时针旋转
-          switch (controller.value[5])
+    //当旋钮有动作时
+    if (btn.pressed) { btn.pressed = false; switch (btn.id) {    
+
+        //睡眠时顺时针旋转执行的函数
+        case BTN_ID_CW:
+          switch (knob.param[KNOB_ROT])
           {
-            case 1: Consumer.press(HIDConsumer::VOLUME_UP);       Consumer.release(); break;
-            case 2: Consumer.press(HIDConsumer::BRIGHTNESS_UP);   Consumer.release(); break;
+            case KNOB_ROT_VOL: Consumer.press(HIDConsumer::VOLUME_UP);       Consumer.release(); break;
+            case KNOB_ROT_BRI: Consumer.press(HIDConsumer::BRIGHTNESS_UP);   Consumer.release(); break;
           }
           break;
 
-        case 1: //逆时针旋转
-          switch (controller.value[5])
+        //睡眠时逆时针旋转执行的函数
+        case BTN_ID_CC:
+          switch (knob.param[KNOB_ROT])
           {
-            case 1: Consumer.press(HIDConsumer::VOLUME_DOWN);     Consumer.release(); break;
-            case 2: Consumer.press(HIDConsumer::BRIGHTNESS_DOWN); Consumer.release(); break;
+            case KNOB_ROT_VOL: Consumer.press(HIDConsumer::VOLUME_DOWN);     Consumer.release(); break;
+            case KNOB_ROT_BRI: Consumer.press(HIDConsumer::BRIGHTNESS_DOWN); Consumer.release(); break;
           }
           break;
 
-        case 2:
-          ui.index = M_MAIN;
-          ui.state = S_NONE;
-          ui.sleep = false;
-          u8g2.setPowerSave(0); 
-          main_param_init();
-          break;
+        //睡眠时短按执行的函数
+        case BTN_ID_SP: Keyboard.press(knob.param[KNOB_COD]);  Keyboard.release(knob.param[KNOB_COD]); break;   
+        
+        //睡眠时长按执行的函数
+        case BTN_ID_LP: ui.index = M_MAIN;  ui.state = S_LAYER_IN; u8g2.setPowerSave(0); ui.sleep = false; break;
       }
-    }    
+    }
   }
 }
 
-void main_proc(void)
+//主菜单处理函数，磁贴类模板
+void main_proc()
 {
-  ui.num = sizeof(main_menu) / sizeof(M_SELECT);
-  switch (controller.value[7])
-  {
-    case 0: main_show_list(); break;
-    case 1: main_show_icon(); break;
-  }
-  if(btn_pressed)
-  {
-    btn_pressed = false;
-    if (controller.value[7])
-    {
-      tile.indicator_x = 0;
-      tile.title_y = TITLE_Y;      
+  tile_show(main_menu, main_icon_pic);
+  if (btn.pressed) { btn.pressed = false; switch (btn.id) { case BTN_ID_CW: case BTN_ID_CC: tile_rotate_switch(); break; case BTN_ID_SP: switch (ui.select[ui.layer]) {
+
+        case 0: ui.index = M_SLEEP;   ui.state = S_LAYER_OUT; break;
+        case 1: ui.index = M_EDITOR;  ui.state = S_LAYER_IN;  break;
+        case 2: ui.index = M_VOLT;    ui.state = S_LAYER_IN;  break;
+        case 3: ui.index = M_SETTING; ui.state = S_LAYER_IN;  break;
+      }
     }
-    switch(btn_id)
-    { 
-      case 0:
-        if (ui.init)
-        {
-          if (ui.select[ui.layer] > 0)
-          {
-            ui.select_last = ui.select[ui.layer];
-            ui.select[ui.layer] -= 1;
-            tile.icon_trg += ICON_SPACE;
-            tile.select_flag = false;
-            if (!controller.value[7]) tile.title_y_trg += TITLE_SPACE;
-          }
-          else 
-          {
-            if (controller.value[6])
-            {
-              ui.select[ui.layer] = ui.num - 1;
-              tile.icon_trg = - ICON_SPACE * (ui.num - 1);
-              if (!controller.value[7]) tile.title_y_trg = - TITLE_SPACE * (ui.num - 1);
-              break;
-            }
-            else tile.select_flag = true;
-          }
-        }
-        break;
-
-      case 1:
-        if (ui.init)
-        {
-          if (ui.select[ui.layer] < (ui.num - 1)) 
-          {
-            ui.select_last = ui.select[ui.layer];
-            ui.select[ui.layer] += 1;
-            tile.icon_trg -= ICON_SPACE;
-            tile.select_flag = false;
-            if (!controller.value[7]) tile.title_y_trg -= TITLE_SPACE;
-          }
-          else 
-          {
-            if (controller.value[6])
-            {
-              ui.select[ui.layer] = 0;
-              tile.icon_trg = 0;
-              if (!controller.value[7]) tile.title_y_trg = 0;
-              break;
-            }
-            else tile.select_flag = true;
-          }
-        }
-        break;
-
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 0:
-            ui.index = M_SLEEP;
-            ui.state = S_NONE;
-            u8g2.setPowerSave(1);
-            ui.sleep = true;
-            key_init();
-            if (eeprom_change == true)
-            {
-              eeprom_write_all_data();
-              eeprom_change = false;
-            }
-            break;
-
-          case 1:  ui.index = M_EDITOR;     ui.state = S_DISAPPEAR;  list_param_init_in();  break;
-          case 2:  ui.index = M_MEASURE;    ui.state = S_DISAPPEAR;  list_param_init_in();  break;
-          case 3:  ui.index = M_SETTINGS;   ui.state = S_DISAPPEAR;  list_param_init_in();  break;
-        }
-        break;
-    }
+    if (!tile.select_flag && ui.init) { tile.indi_x = 0; tile.title_y = tile.title_y_calc; }
   }
 }
 
+//编辑器菜单处理函数
 void editor_proc()
 {
-  ui.num = sizeof(editor_menu) / sizeof(M_SELECT);
-  menu_ui_show(editor_menu);
-  list.box_x_trg = u8g2.getStrWidth(editor_menu[ui.select[ui.layer]].m_select) + 8;
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: case 1: rotate_switch(); break;      
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 0: ui.index = M_MAIN;    ui.state = S_DISAPPEAR;   list_param_init_out();  main_param_init();  break;
-          case 1:
-          case 2:
-          case 3:
-          case 4:
-          case 5:
-          case 6:
-          case 7:
-          case 8:
-          case 9:
-          case 10:
-          case 11: ui.index = M_EDIT;   ui.state = S_DISAPPEAR;   list_param_init_in();   break;
-        }
-        break;
+  list_show(editor_menu, M_EDITOR); 
+  if (btn.pressed) { btn.pressed = false; switch (btn.id) { case BTN_ID_CW: case BTN_ID_CC: list_rotate_switch(); break; case BTN_ID_LP: ui.select[ui.layer] = 0; case BTN_ID_SP: switch (ui.select[ui.layer]) {
+        
+        case 0:   ui.index = M_MAIN;  ui.state = S_LAYER_OUT; break;
+        case 1:   ui.index = M_KNOB;  ui.state = S_LAYER_IN;  check_box_v_init(knob.param); break;
+        case 2:   ui.index = M_KEYS;  ui.state = S_LAYER_IN;  check_box_v_init(key[K0]);    break;
+        case 3:   ui.index = M_KEYS;  ui.state = S_LAYER_IN;  check_box_v_init(key[K1]);    break;
+        case 4:   ui.index = M_KEYS;  ui.state = S_LAYER_IN;  check_box_v_init(key[K2]);    break;
+        case 5:   ui.index = M_KEYS;  ui.state = S_LAYER_IN;  check_box_v_init(key[K3]);    break;
+        case 6:   ui.index = M_KEYS;  ui.state = S_LAYER_IN;  check_box_v_init(key[K4]);    break;
+        case 7:   ui.index = M_KEYS;  ui.state = S_LAYER_IN;  check_box_v_init(key[K5]);    break;
+        case 8:   ui.index = M_KEYS;  ui.state = S_LAYER_IN;  check_box_v_init(key[K6]);    break;
+        case 9:   ui.index = M_KEYS;  ui.state = S_LAYER_IN;  check_box_v_init(key[K7]);    break;
+        case 10:  ui.index = M_KEYS;  ui.state = S_LAYER_IN;  check_box_v_init(key[K8]);    break;
+        case 11:  ui.index = M_KEYS;  ui.state = S_LAYER_IN;  check_box_v_init(key[K9]);    break;
+      }
     }
   }
 }
 
-void edit_proc()
-{
-  ui.num = sizeof(edit_menu) / sizeof(M_SELECT);
-  menu_ui_show(edit_menu);
-  list.box_x_trg = u8g2.getStrWidth(edit_menu[ui.select[ui.layer]].m_select) + 8;
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: case 1: rotate_switch(); break;      
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 0: ui.index = M_EDITOR;    ui.state = S_DISAPPEAR;   list_param_init_out();  break;
-          case 1: 
-          case 2: 
-          case 3: 
-          case 4: 
-          case 5: ui.index = M_EDITING;   ui.state = S_NONE;                                break;
-          case 6: ui.index = M_CODE;      ui.state = S_DISAPPEAR;   list_param_init_in();   break;
-          case 7: ui.index = M_MODE;      ui.state = S_DISAPPEAR;   list_param_init_in();   break;
-        }
-        break;
-    }
-  }
-}
-
-//正在编辑页面处理函数
-void editing_proc()
-{
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0:
-        if (key[ui.select[ui.layer] - 1][ui.select[ui.layer - 1] - 1] < key[TRAVEL][ui.select[ui.layer - 1] - 1]) key[ui.select[ui.layer] - 1][ui.select[ui.layer - 1] - 1] += 1;
-        eeprom_change = true;
-        break;
-
-      case 1:
-        if (key[ui.select[ui.layer] - 1][ui.select[ui.layer - 1] - 1] > 0)  key[ui.select[ui.layer] - 1][ui.select[ui.layer - 1] - 1] -= 1;
-        eeprom_change = true;
-        break;  
-
-      case 2:
-        if (ui.select[ui.layer - 1] == 11)  for (uint8_t i = 0 ; i < KEYS ; ++i)  key[ui.select[ui.layer] - 1][i] = key[ui.select[ui.layer] - 1][ui.select[ui.layer - 1] - 1];      
-        ui.index = M_EDIT;
-        ui.state = S_NONE;
-        break;
-    }
-  }
-  menu_ui_show(edit_menu);
-  for (uint16_t i = 0; i < buf_len; ++i)  buf_ptr[i] = buf_ptr[i] & (i % 2 == 0 ? 0x55 : 0xAA);
-  editing_show();
-}
-
-void code_proc()
-{
-  ui.num = sizeof(code_menu) / sizeof(M_SELECT);
-  menu_ui_show(code_menu);
-  list.box_x_trg = u8g2.getStrWidth(code_menu[ui.select[ui.layer]].m_select) + 8;
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: case 1: rotate_switch(); break;      
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 0: if (ui.select[ui.layer - 2] == 11) for (uint8_t i = 0 ; i < KEYS ; ++i) key[CODES][i] = key[CODES][ui.select[ui.layer - 2] - 1];
-                  ui.index = M_EDIT;  ui.state = S_DISAPPEAR;   list_param_init_out();    break;
-          case 1: ui.index = M_ALPH;  ui.state = S_DISAPPEAR;   list_param_init_in();     break;
-          case 2: ui.index = M_NUMB;  ui.state = S_DISAPPEAR;   list_param_init_in();     break;
-          case 3: ui.index = M_FUNC;  ui.state = S_DISAPPEAR;   list_param_init_in();     break;
-          case 4: ui.index = M_MORE;  ui.state = S_DISAPPEAR;   list_param_init_in();     break;
-        }
-        break;
-    }
-  }
-}
-
-void alph_proc()
-{
-  ui.num = sizeof(alph_menu) / sizeof(M_SELECT);
-  menu_ui_show(alph_menu);
-  list.box_x_trg = u8g2.getStrWidth(alph_menu[ui.select[ui.layer]].m_select) + 8;
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: case 1: rotate_switch(); break;      
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 1:   key[CODES][ui.select[ui.layer - 3] - 1] = 'a'; eeprom_change = true; break;
-          case 2:   key[CODES][ui.select[ui.layer - 3] - 1] = 'b'; eeprom_change = true; break;
-          case 3:   key[CODES][ui.select[ui.layer - 3] - 1] = 'c'; eeprom_change = true; break;
-          case 4:   key[CODES][ui.select[ui.layer - 3] - 1] = 'd'; eeprom_change = true; break;
-          case 5:   key[CODES][ui.select[ui.layer - 3] - 1] = 'e'; eeprom_change = true; break;
-          case 6:   key[CODES][ui.select[ui.layer - 3] - 1] = 'f'; eeprom_change = true; break;
-          case 7:   key[CODES][ui.select[ui.layer - 3] - 1] = 'g'; eeprom_change = true; break;
-          case 8:   key[CODES][ui.select[ui.layer - 3] - 1] = 'h'; eeprom_change = true; break;
-          case 9:   key[CODES][ui.select[ui.layer - 3] - 1] = 'i'; eeprom_change = true; break;
-          case 10:  key[CODES][ui.select[ui.layer - 3] - 1] = 'j'; eeprom_change = true; break;
-          case 11:  key[CODES][ui.select[ui.layer - 3] - 1] = 'k'; eeprom_change = true; break;
-          case 12:  key[CODES][ui.select[ui.layer - 3] - 1] = 'l'; eeprom_change = true; break;
-          case 13:  key[CODES][ui.select[ui.layer - 3] - 1] = 'm'; eeprom_change = true; break;
-          case 14:  key[CODES][ui.select[ui.layer - 3] - 1] = 'n'; eeprom_change = true; break;
-          case 15:  key[CODES][ui.select[ui.layer - 3] - 1] = 'o'; eeprom_change = true; break;
-          case 16:  key[CODES][ui.select[ui.layer - 3] - 1] = 'p'; eeprom_change = true; break;
-          case 17:  key[CODES][ui.select[ui.layer - 3] - 1] = 'q'; eeprom_change = true; break;
-          case 18:  key[CODES][ui.select[ui.layer - 3] - 1] = 'r'; eeprom_change = true; break;
-          case 19:  key[CODES][ui.select[ui.layer - 3] - 1] = 's'; eeprom_change = true; break;
-          case 20:  key[CODES][ui.select[ui.layer - 3] - 1] = 't'; eeprom_change = true; break;
-          case 21:  key[CODES][ui.select[ui.layer - 3] - 1] = 'u'; eeprom_change = true; break;
-          case 22:  key[CODES][ui.select[ui.layer - 3] - 1] = 'v'; eeprom_change = true; break;
-          case 23:  key[CODES][ui.select[ui.layer - 3] - 1] = 'w'; eeprom_change = true; break;
-          case 24:  key[CODES][ui.select[ui.layer - 3] - 1] = 'x'; eeprom_change = true; break;
-          case 25:  key[CODES][ui.select[ui.layer - 3] - 1] = 'y'; eeprom_change = true; break;
-          case 26:  key[CODES][ui.select[ui.layer - 3] - 1] = 'z'; eeprom_change = true; break;
-        }
-        ui.index = M_CODE;
-        ui.state = S_DISAPPEAR;
-        list_param_init_out();
-        break;
-    }
-  }
-}
-
-void numb_proc()
-{
-  ui.num = sizeof(numb_menu) / sizeof(M_SELECT);
-  menu_ui_show(numb_menu);
-  list.box_x_trg = u8g2.getStrWidth(numb_menu[ui.select[ui.layer]].m_select) + 8;
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: case 1: rotate_switch(); break;      
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 1:   key[CODES][ui.select[ui.layer - 3] - 1] = 0; eeprom_change = true; break;
-          case 2:   key[CODES][ui.select[ui.layer - 3] - 1] = 1; eeprom_change = true; break;
-          case 3:   key[CODES][ui.select[ui.layer - 3] - 1] = 2; eeprom_change = true; break;
-          case 4:   key[CODES][ui.select[ui.layer - 3] - 1] = 3; eeprom_change = true; break;
-          case 5:   key[CODES][ui.select[ui.layer - 3] - 1] = 4; eeprom_change = true; break;
-          case 6:   key[CODES][ui.select[ui.layer - 3] - 1] = 5; eeprom_change = true; break;
-          case 7:   key[CODES][ui.select[ui.layer - 3] - 1] = 6; eeprom_change = true; break;
-          case 8:   key[CODES][ui.select[ui.layer - 3] - 1] = 7; eeprom_change = true; break;
-          case 9:   key[CODES][ui.select[ui.layer - 3] - 1] = 8; eeprom_change = true; break;
-          case 10:  key[CODES][ui.select[ui.layer - 3] - 1] = 9; eeprom_change = true; break;
-        }
-        ui.index = M_CODE;
-        ui.state = S_DISAPPEAR;
-        list_param_init_out();
-        break;
-    }
-  }
-}
-
-void func_proc()
-{
-  ui.num = sizeof(func_menu) / sizeof(M_SELECT);
-  menu_ui_show(func_menu);
-  list.box_x_trg = u8g2.getStrWidth(func_menu[ui.select[ui.layer]].m_select) + 8;
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: case 1: rotate_switch(); break;      
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 1:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F1;  eeprom_change = true; break;
-          case 2:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F2;  eeprom_change = true; break;
-          case 3:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F3;  eeprom_change = true; break;
-          case 4:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F4;  eeprom_change = true; break;
-          case 5:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F5;  eeprom_change = true; break;
-          case 6:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F6;  eeprom_change = true; break;
-          case 7:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F7;  eeprom_change = true; break;
-          case 8:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F8;  eeprom_change = true; break;
-          case 9:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F9;  eeprom_change = true; break;
-          case 10: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F10; eeprom_change = true; break;
-          case 11: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F11; eeprom_change = true; break;
-          case 12: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_F12; eeprom_change = true; break;
-        }
-        ui.index = M_CODE;
-        ui.state = S_DISAPPEAR;
-        list_param_init_out();
-        break;
-    }
-  }
-}
-
-void more_proc()
-{
-  ui.num = sizeof(more_menu) / sizeof(M_SELECT);
-  menu_ui_show(more_menu);
-  list.box_x_trg = u8g2.getStrWidth(more_menu[ui.select[ui.layer]].m_select) + 8;
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: case 1: rotate_switch(); break;      
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 1:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_LEFT_CTRL;    eeprom_change = true; break;
-          case 2:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_RIGHT_CTRL;   eeprom_change = true; break;
-          case 3:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_LEFT_SHIFT;   eeprom_change = true; break;
-          case 4:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_RIGHT_SHIFT;  eeprom_change = true; break;
-          case 5:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_LEFT_ALT;     eeprom_change = true; break;
-          case 6:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_RIGHT_ALT;    eeprom_change = true; break;
-          case 7:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_LEFT_GUI;     eeprom_change = true; break;
-          case 8:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_RIGHT_GUI;    eeprom_change = true; break;
-          case 9:  key[CODES][ui.select[ui.layer - 3] - 1] = KEY_UP_ARROW;     eeprom_change = true; break;
-          case 10: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_DOWN_ARROW;   eeprom_change = true; break;
-          case 11: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_LEFT_ARROW;   eeprom_change = true; break;
-          case 12: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_RIGHT_ARROW;  eeprom_change = true; break;
-          case 13: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_BACKSPACE;    eeprom_change = true; break;
-          case 14: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_TAB;          eeprom_change = true; break;
-          case 15: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_RETURN;       eeprom_change = true; break;
-          case 16: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_ESC;          eeprom_change = true; break;
-          case 17: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_INSERT;       eeprom_change = true; break;
-          case 18: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_DELETE;       eeprom_change = true; break;
-          case 19: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_PAGE_UP;      eeprom_change = true; break;
-          case 21: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_PAGE_DOWN;    eeprom_change = true; break;
-          case 22: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_HOME;         eeprom_change = true; break;
-          case 23: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_END;          eeprom_change = true; break;
-          case 24: key[CODES][ui.select[ui.layer - 3] - 1] = KEY_CAPS_LOCK;    eeprom_change = true; break;
-        }
-        ui.index = M_CODE;
-        ui.state = S_DISAPPEAR;
-        list_param_init_out();
-        break;
-    }
-  }
-}
-
-void mode_proc()
-{
-  ui.num = sizeof(mode_menu) / sizeof(M_SELECT);
-  menu_ui_show(mode_menu);
-  list.box_x_trg = u8g2.getStrWidth(mode_menu[ui.select[ui.layer]].m_select) + 8;
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: case 1: rotate_switch(); break;      
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 1: key[MODES][ui.select[ui.layer - 2] - 1] = 1; eeprom_change = true; break;
-          case 2: key[MODES][ui.select[ui.layer - 2] - 1] = 2; eeprom_change = true; break;
-          case 3: key[MODES][ui.select[ui.layer - 2] - 1] = 0; eeprom_change = true; break;
-        }
-        if (ui.select[ui.layer - 2] == 11)  for (uint8_t i = 0 ; i < KEYS ; ++i)  key[MODES][i] = key[MODES][ui.select[ui.layer - 2] - 1];
-        ui.index = M_EDIT;
-        ui.state = S_DISAPPEAR;  
-        list_param_init_out(); 
-        break;
-    }
-  }
-}
-
-void measure_proc()
-{
-  ui.num = sizeof(measure_menu) / sizeof(M_SELECT);
-  menu_ui_show(measure_menu);
-  list.box_x_trg = u8g2.getStrWidth(measure_menu[ui.select[ui.layer]].m_select) + 8;
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: case 1: rotate_switch(); break;      
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 0:   ui.index = M_MAIN;      ui.state = S_DISAPPEAR;   list_param_init_out();  main_param_init();      break;
-          case 1:
-          case 2:
-          case 3:
-          case 4:
-          case 5:
-          case 6:
-          case 7:
-          case 8:
-          case 9:
-          case 10:  ui.index = M_VOLTAGE;   ui.state = S_DISAPPEAR;   list_param_init_in();   voltage_param_init();   break;
-        }
-        break;
-    }
-  }
-}
-
-void settings_proc()
-{
-  ui.num = sizeof(settings_menu) / sizeof(M_SELECT);
-  menu_ui_show(settings_menu);
-  list.box_x_trg = u8g2.getStrWidth(settings_menu[ui.select[ui.layer]].m_select) + 8;
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: case 1: rotate_switch(); break;      
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 0:  ui.index = M_MAIN;        ui.state = S_DISAPPEAR;   list_param_init_out();  main_param_init();                            break;
-          case 1:  ui.index = M_KNOB;        ui.state = S_DISAPPEAR;   list_param_init_in();                                                 break;
-          case 2:  ui.index = M_CONTROLLER;  ui.state = S_NONE;                                controller.select = 0;                        break;
-          case 3:  ui.index = M_CONTROLLER;  ui.state = S_NONE;                                controller.select = 1;                        break;
-          case 4:  ui.index = M_CONTROLLER;  ui.state = S_NONE;                                controller.select = 2;                        break;
-          case 5:  ui.index = M_CONTROLLER;  ui.state = S_NONE;                                controller.select = 3;                        break;
-          case 6:  ui.index = M_CONTROLLER;  ui.state = S_NONE;                                controller.select = 4;                        break;
-          case 7:  ui.index = M_SETTINGS;    ui.state = S_DISAPPEAR;   eeprom_change = true;   controller.value[6] = !controller.value[6];   break;
-          case 8:  ui.index = M_SETTINGS;    ui.state = S_DISAPPEAR;   eeprom_change = true;   controller.value[7] = !controller.value[7];   break;
-          case 9:  ui.index = M_SETTINGS;    ui.state = S_DISAPPEAR;   eeprom_change = true;   controller.value[8] = !controller.value[8];   break;
-          case 10: ui.index = M_ABOUT;       ui.state = S_DISAPPEAR;   list_param_init_in();   about_param_init();                           break;
-        }
-        break;
-    }
-  }
-}
-
+//旋钮编辑菜单处理函数
 void knob_proc()
 {
-  ui.num = sizeof(knob_menu) / sizeof(M_SELECT);
-  menu_ui_show(knob_menu);
-  list.box_x_trg = u8g2.getStrWidth(knob_menu[ui.select[ui.layer]].m_select) + 8;
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: case 1: rotate_switch(); break;      
-      case 2:
-        switch (ui.select[ui.layer])
-        {
-          case 1: controller.value[5] = 1; eeprom_change = true; break;
-          case 2: controller.value[5] = 2; eeprom_change = true; break;
-          case 3: controller.value[5] = 0; eeprom_change = true; break;
-        }
-        ui.index = M_SETTINGS;
-        ui.state = S_DISAPPEAR;
-        list_param_init_out();
-        break;
+  list_show(knob_menu, M_KNOB);
+  if (btn.pressed) { btn.pressed = false; switch (btn.id) { case BTN_ID_CW: case BTN_ID_CC: list_rotate_switch(); break; case BTN_ID_LP: ui.select[ui.layer] = 0; case BTN_ID_SP: switch (ui.select[ui.layer]) {
+        
+        case 0: ui.index = M_EDITOR;  ui.state = S_LAYER_OUT; break;
+        case 1: ui.index = M_KRF;     ui.state = S_LAYER_IN;  check_box_s_init(&knob.param[KNOB_ROT], &knob.param[KNOB_ROT_P]); break;
+        case 2: ui.index = M_KCODE;   ui.state = S_LAYER_IN;  check_box_s_init(&knob.param[KNOB_COD], &knob.param[KNOB_COD_P]); break;
+      }
     }
   }
 }
 
-//正在编辑页面处理函数
-void controller_proc()
+//旋钮旋转功能菜单处理函数
+void krf_proc()
 {
-  uint8_t max_value;
-  uint8_t min_value;
-  uint8_t step_value;
-  switch (controller.select)
-  {
-    case 0: max_value = 255;  min_value = 0;   step_value = 5; break;
-    case 1: max_value = 90;   min_value = 10;  step_value = 1; break;
-    case 2: max_value = 90;   min_value = 10;  step_value = 1; break;
-    case 3: max_value = 90;   min_value = 10;  step_value = 1; break;
-    case 4: max_value = 50;   min_value = 0;   step_value = 5; break;
-  }
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    switch (btn_id)
-    {
-      case 0: if (controller.value[controller.select] < max_value)  controller.value[controller.select] += step_value; eeprom_change = true; break;
-      case 1: if (controller.value[controller.select] > min_value)  controller.value[controller.select] -= step_value; eeprom_change = true; break;  
-      case 2: ui.index = M_SETTINGS; ui.state = S_NONE; break;
-    }
-    if (controller.select == 0) u8g2.setContrast(controller.value[0]);
-  }
-  menu_ui_show(settings_menu);
-  for (uint16_t i = 0; i < buf_len; ++i)  buf_ptr[i] = buf_ptr[i] & (i % 2 == 0 ? 0x55 : 0xAA);
-  controller_show();
-}
-
-void voltage_proc()
-{
-  voltage_show();
-  if (btn_pressed)
-  {
-    btn_pressed = false;
-    if (btn_id == 2)
-    {
-      ui.index = M_MEASURE;
-      ui.state = S_DISAPPEAR;
-      list_param_init_out();
+  list_show(krf_menu, M_KRF);
+  if (btn.pressed) { btn.pressed = false; switch (btn.id) { case BTN_ID_CW: case BTN_ID_CC: list_rotate_switch(); break; case BTN_ID_LP: ui.select[ui.layer] = 0; case BTN_ID_SP: switch (ui.select[ui.layer]) {
+        
+        case 0: ui.index = M_KNOB;  ui.state = S_LAYER_OUT; break;
+        case 1: break;
+        case 2: check_box_s_select(KNOB_ROT_DIS, ui.select[ui.layer]); break;
+        case 3: break;
+        case 4: check_box_s_select(KNOB_ROT_VOL, ui.select[ui.layer]); break;
+        case 5: check_box_s_select(KNOB_ROT_BRI, ui.select[ui.layer]); break;
+        case 6: break;
+      }
     }
   }
 }
 
-void about_proc(void)
+
+//按键编辑菜单处理函数
+void keys_proc()
 {
-  about_show();
-  if(btn_pressed)
-  {
-    btn_pressed = false;
-    switch(btn_id)
-    { 
-      case 0: if (about.y_trg > 0) about.y_trg -= 12; break;
-      case 1: if (about.y_trg < 130 - display_height)about.y_trg += 12; break;
-      case 2:
-        ui.index = M_SETTINGS;
-        ui.state = S_DISAPPEAR;
-        list_param_init_out();
-        break;
+  list_show(keys_menu, M_KEYS);
+  if (btn.pressed) { btn.pressed = false; switch (btn.id) { case BTN_ID_CW: case BTN_ID_CC: list_rotate_switch(); break; case BTN_ID_LP: ui.select[ui.layer] = 0; case BTN_ID_SP: switch (ui.select[ui.layer]) {
+        
+        case 0: ui.index = M_EDITOR;  ui.state = S_LAYER_OUT; break;
+        case 1: window_value_init("Trigger", TRIGGER, &key[ui.select[ui.layer - 1] - 2][TRIGGER],  40,  0,  1, keys_menu, M_KEYS);  break;
+        case 2: window_value_init("Release", RELEASE, &key[ui.select[ui.layer - 1] - 2][RELEASE],  40,  0,  1, keys_menu, M_KEYS);  break;
+        case 3: window_value_init("Top",     TOP,     &key[ui.select[ui.layer - 1] - 2][TOP],      40,  0,  1, keys_menu, M_KEYS);  break;
+        case 4: window_value_init("Bottom",  BOTTOM,  &key[ui.select[ui.layer - 1] - 2][BOTTOM],   40,  0,  1, keys_menu, M_KEYS);  break;
+        case 5: window_value_init("Times",   TIMES,   &key[ui.select[ui.layer - 1] - 2][TIMES],    40,  0,  1, keys_menu, M_KEYS);  break;
+        case 6: ui.index = M_KCODE; ui.state = S_LAYER_IN; check_box_s_init(&key[ui.select[ui.layer - 1] - 2][CODES], &key[ui.select[ui.layer - 1] - 2][CODES_P]); break;
+        case 7: ui.index = M_KMODE; ui.state = S_LAYER_IN; check_box_s_init(&key[ui.select[ui.layer - 1] - 2][MODES], &key[ui.select[ui.layer - 1] - 2][MODES_P]); break;
+      }
+    }
+  }
+}
+
+//点按功能菜单处理函数
+void kcode_proc()
+{
+  list_show(kcode_menu, M_KCODE);
+  if (btn.pressed) { btn.pressed = false; switch (btn.id) { case BTN_ID_CW: case BTN_ID_CC: list_rotate_switch(); break;  case BTN_ID_LP: ui.select[ui.layer] = 0; case BTN_ID_SP: switch (ui.select[ui.layer]) {
+    
+        case 0:   if (ui.select[ui.layer - 2] == 1) ui.index = M_KNOB; else ui.index = M_KEYS; ui.state = S_LAYER_OUT; break;
+        case 1:   break;
+        case 2:   check_box_s_select(KEY_DIS,           ui.select[ui.layer]); break;
+        case 3:   break;
+        case 4:   check_box_s_select('A',               ui.select[ui.layer]); break;
+        case 5:   check_box_s_select('B',               ui.select[ui.layer]); break;
+        case 6:   check_box_s_select('C',               ui.select[ui.layer]); break;
+        case 7:   check_box_s_select('D',               ui.select[ui.layer]); break;
+        case 8:   check_box_s_select('E',               ui.select[ui.layer]); break;
+        case 9:   check_box_s_select('F',               ui.select[ui.layer]); break;
+        case 10:  check_box_s_select('G',               ui.select[ui.layer]); break;
+        case 11:  check_box_s_select('H',               ui.select[ui.layer]); break;
+        case 12:  check_box_s_select('I',               ui.select[ui.layer]); break;
+        case 13:  check_box_s_select('J',               ui.select[ui.layer]); break;
+        case 14:  check_box_s_select('K',               ui.select[ui.layer]); break;
+        case 15:  check_box_s_select('L',               ui.select[ui.layer]); break;
+        case 16:  check_box_s_select('M',               ui.select[ui.layer]); break;
+        case 17:  check_box_s_select('N',               ui.select[ui.layer]); break;
+        case 18:  check_box_s_select('O',               ui.select[ui.layer]); break;
+        case 19:  check_box_s_select('P',               ui.select[ui.layer]); break;
+        case 20:  check_box_s_select('Q',               ui.select[ui.layer]); break;
+        case 21:  check_box_s_select('R',               ui.select[ui.layer]); break;
+        case 22:  check_box_s_select('S',               ui.select[ui.layer]); break;
+        case 23:  check_box_s_select('T',               ui.select[ui.layer]); break;
+        case 24:  check_box_s_select('U',               ui.select[ui.layer]); break;
+        case 25:  check_box_s_select('V',               ui.select[ui.layer]); break;
+        case 26:  check_box_s_select('W',               ui.select[ui.layer]); break;
+        case 27:  check_box_s_select('X',               ui.select[ui.layer]); break;
+        case 28:  check_box_s_select('Y',               ui.select[ui.layer]); break;
+        case 29:  check_box_s_select('Z',               ui.select[ui.layer]); break;
+        case 30:  break;
+        case 31:  check_box_s_select('0',               ui.select[ui.layer]); break;
+        case 32:  check_box_s_select('1',               ui.select[ui.layer]); break;
+        case 33:  check_box_s_select('2',               ui.select[ui.layer]); break;
+        case 34:  check_box_s_select('3',               ui.select[ui.layer]); break;
+        case 35:  check_box_s_select('4',               ui.select[ui.layer]); break;
+        case 36:  check_box_s_select('5',               ui.select[ui.layer]); break;
+        case 37:  check_box_s_select('6',               ui.select[ui.layer]); break;
+        case 38:  check_box_s_select('7',               ui.select[ui.layer]); break;
+        case 39:  check_box_s_select('8',               ui.select[ui.layer]); break;
+        case 40:  check_box_s_select('9',               ui.select[ui.layer]); break;
+        case 41:  break;
+        case 42:  check_box_s_select( KEY_ESC,          ui.select[ui.layer]); break;
+        case 43:  check_box_s_select( KEY_F1,           ui.select[ui.layer]); break;
+        case 44:  check_box_s_select( KEY_F2,           ui.select[ui.layer]); break;
+        case 45:  check_box_s_select( KEY_F3,           ui.select[ui.layer]); break;
+        case 46:  check_box_s_select( KEY_F4,           ui.select[ui.layer]); break;
+        case 47:  check_box_s_select( KEY_F5,           ui.select[ui.layer]); break;
+        case 48:  check_box_s_select( KEY_F6,           ui.select[ui.layer]); break;
+        case 49:  check_box_s_select( KEY_F7,           ui.select[ui.layer]); break;
+        case 50:  check_box_s_select( KEY_F8,           ui.select[ui.layer]); break;
+        case 51:  check_box_s_select( KEY_F9,           ui.select[ui.layer]); break;
+        case 52:  check_box_s_select( KEY_F10,          ui.select[ui.layer]); break;
+        case 53:  check_box_s_select( KEY_F11,          ui.select[ui.layer]); break;
+        case 54:  check_box_s_select( KEY_F12,          ui.select[ui.layer]); break;
+        case 55:  break;
+        case 56:  check_box_s_select( KEY_LEFT_CTRL,    ui.select[ui.layer]); break;
+        case 57:  check_box_s_select( KEY_LEFT_SHIFT,   ui.select[ui.layer]); break;
+        case 58:  check_box_s_select( KEY_LEFT_ALT,     ui.select[ui.layer]); break;
+        case 59:  check_box_s_select( KEY_LEFT_GUI,     ui.select[ui.layer]); break;
+        case 60:  check_box_s_select( KEY_RIGHT_CTRL,   ui.select[ui.layer]); break;
+        case 61:  check_box_s_select( KEY_RIGHT_SHIFT,  ui.select[ui.layer]); break;
+        case 62:  check_box_s_select( KEY_RIGHT_ALT,    ui.select[ui.layer]); break;
+        case 63:  check_box_s_select( KEY_RIGHT_GUI,    ui.select[ui.layer]); break;
+        case 64:  break;
+        case 65:  check_box_s_select( KEY_CAPS_LOCK,    ui.select[ui.layer]); break;
+        case 66:  check_box_s_select( KEY_BACKSPACE,    ui.select[ui.layer]); break;
+        case 67:  check_box_s_select( KEY_RETURN,       ui.select[ui.layer]); break;
+        case 68:  check_box_s_select( KEY_INSERT,       ui.select[ui.layer]); break;
+        case 69:  check_box_s_select( KEY_DELETE,       ui.select[ui.layer]); break;
+        case 70:  check_box_s_select( KEY_TAB,          ui.select[ui.layer]); break;
+        case 71:  break;
+        case 72:  check_box_s_select( KEY_HOME,         ui.select[ui.layer]); break;
+        case 73:  check_box_s_select( KEY_END,          ui.select[ui.layer]); break;
+        case 74:  check_box_s_select( KEY_PAGE_UP,      ui.select[ui.layer]); break;
+        case 75:  check_box_s_select( KEY_PAGE_DOWN,    ui.select[ui.layer]); break;
+        case 76:  break;
+        case 77:  check_box_s_select( KEY_UP_ARROW,     ui.select[ui.layer]); break;
+        case 78:  check_box_s_select( KEY_DOWN_ARROW,   ui.select[ui.layer]); break;
+        case 79:  check_box_s_select( KEY_LEFT_ARROW,   ui.select[ui.layer]); break;
+        case 80:  check_box_s_select( KEY_RIGHT_ARROW,  ui.select[ui.layer]); break;
+        case 81:  break;
+      }
+    }
+  }
+}
+
+//按键模式菜单
+void kmode_proc()
+{
+  list_show(kmode_menu, M_KMODE);
+  if (btn.pressed) { btn.pressed = false; switch (btn.id) { case BTN_ID_CW: case BTN_ID_CC: list_rotate_switch(); break;  case BTN_ID_LP: ui.select[ui.layer] = 0; case BTN_ID_SP: switch (ui.select[ui.layer]) {
+    
+        case 0:   ui.index = M_KEYS; ui.state = S_LAYER_OUT; break;
+        case 1:   break;
+        case 2:   check_box_s_select(KEY_MODE1, ui.select[ui.layer]); break;
+        case 3:   check_box_s_select(KEY_MODE2, ui.select[ui.layer]); break;
+        case 4:   break;
+      }
+    }
+  }
+}
+
+//电压测量页处理函数
+void volt_proc()
+{
+  volt_show();
+  if (btn.pressed) { btn.pressed = false; switch (btn.id) { case BTN_ID_CW: case BTN_ID_CC: list_rotate_switch(); break;
+
+      case BTN_ID_SP: case BTN_ID_LP: ui.index = M_MAIN;  ui.state = S_LAYER_OUT; break;
+    }
+  }
+}
+
+//设置菜单处理函数，多选框列表类模板，弹窗模板
+void setting_proc()
+{
+  list_show(setting_menu, M_SETTING);
+  if (btn.pressed) { btn.pressed = false; switch (btn.id) { case BTN_ID_CW: case BTN_ID_CC: list_rotate_switch(); break; case BTN_ID_LP: ui.select[ui.layer] = 0; case BTN_ID_SP: switch (ui.select[ui.layer]) {
+        
+        //返回更浅层级，长按被当作选择这一项，也是执行这一行
+        case 0:   ui.index = M_MAIN;  ui.state = S_LAYER_OUT; break;
+        
+        //弹出窗口，参数初始化：标题，参数名，参数值，最大值，最小值，步长，背景列表名，背景列表标签
+        case 1:   window_value_init("Disp Bri", DISP_BRI, &ui.param[DISP_BRI],  255,  0,  5, setting_menu, M_SETTING);  break;
+        case 2:   window_value_init("Tile Ani", TILE_ANI, &ui.param[TILE_ANI],  100, 10,  1, setting_menu, M_SETTING);  break;
+        case 3:   window_value_init("List Ani", LIST_ANI, &ui.param[LIST_ANI],  100, 10,  1, setting_menu, M_SETTING);  break;
+        case 4:   window_value_init("Win Ani",  WIN_ANI,  &ui.param[WIN_ANI],   100, 10,  1, setting_menu, M_SETTING);  break;
+        case 5:   window_value_init("Spot Ani", SPOT_ANI, &ui.param[SPOT_ANI],  100, 10,  1, setting_menu, M_SETTING);  break;
+        case 6:   window_value_init("Tag Ani",  TAG_ANI,  &ui.param[TAG_ANI],   100, 10,  1, setting_menu, M_SETTING);  break;
+        case 7:   window_value_init("Fade Ani", FADE_ANI, &ui.param[FADE_ANI],  255,  0,  1, setting_menu, M_SETTING);  break;
+        case 8:   window_value_init("Btn SPT",  BTN_SPT,  &ui.param[BTN_SPT],   255,  0,  1, setting_menu, M_SETTING);  break;
+        case 9:   window_value_init("Btn LPT",  BTN_LPT,  &ui.param[BTN_LPT],   255,  0,  1, setting_menu, M_SETTING);  break;
+
+        //多选框
+        case 10:  check_box_m_select( TILE_UFD  );  break;
+        case 11:  check_box_m_select( LIST_UFD  );  break;
+        case 12:  check_box_m_select( TILE_LOOP );  break;
+        case 13:  check_box_m_select( LIST_LOOP );  break;
+        case 14:  check_box_m_select( WIN_BOK   );  break;
+        case 15:  check_box_m_select( KNOB_DIR  );  break;
+        case 16:  check_box_m_select( DARK_MODE );  break;
+
+        //关于本机
+        case 17:  ui.index = M_ABOUT; ui.state = S_LAYER_IN; break;
+      }
+    }
+  }
+}
+
+//关于本机页
+void about_proc()
+{
+  list_show(about_menu, M_ABOUT);
+  if (btn.pressed) { btn.pressed = false; switch (btn.id) { case BTN_ID_CW: case BTN_ID_CC: list_rotate_switch(); break; case BTN_ID_LP: ui.select[ui.layer] = 0; case BTN_ID_SP: switch (ui.select[ui.layer]) {
+
+        case 0:   ui.index = M_SETTING;  ui.state = S_LAYER_OUT; break;
+      }
     }
   }
 }
@@ -1834,51 +2013,46 @@ void about_proc(void)
 //总的UI进程
 void ui_proc()
 {
+  u8g2.sendBuffer();
   switch (ui.state)
   {
-    case S_NONE: u8g2.clearBuffer();
-      switch (ui.index)
-      {
-        case M_SLEEP:         sleep_proc();         break;
-        case M_MAIN:          main_proc();          break;
-        case M_EDITOR:        editor_proc();        break;
-        case M_EDIT:          edit_proc();          break;
-        case M_EDITING:       editing_proc();       break;
-        case M_CODE:          code_proc();          break;
-        case M_ALPH:          alph_proc();          break;
-        case M_NUMB:          numb_proc();          break;
-        case M_FUNC:          func_proc();          break;
-        case M_MORE:          more_proc();          break;
-        case M_MODE:          mode_proc();          break;
-        case M_MEASURE:       measure_proc();       break;
-        case M_SETTINGS:      settings_proc();      break;
-        case M_CONTROLLER:    controller_proc();    break;
-        case M_KNOB:          knob_proc();          break;
-        case M_VOLTAGE:       voltage_proc();       break;
-        case M_ABOUT:         about_proc();         break;
-      }
-      break;
-    case S_DISAPPEAR: disappear(); break;
+    case S_FADE:          fade();                   break;  //转场动画
+    case S_WINDOW:        window_param_init();      break;  //弹窗初始化
+    case S_LAYER_IN:      layer_init_in();          break;  //层级初始化
+    case S_LAYER_OUT:     layer_init_out();         break;  //层级初始化
+  
+    case S_NONE: u8g2.clearBuffer(); switch (ui.index)      //直接选择页面
+    {
+      case M_WINDOW:      window_proc();            break;
+      case M_SLEEP:       sleep_proc();             break;
+      case M_MAIN:        main_proc();              break;
+      case M_EDITOR:      editor_proc();            break;
+      case M_KNOB:        knob_proc();              break;
+      case M_KRF:         krf_proc();               break;
+      case M_KEYS:        keys_proc();              break;
+      case M_KCODE:       kcode_proc();             break;
+      case M_KMODE:       kmode_proc();             break;
+      case M_VOLT:        volt_proc();              break;
+      case M_SETTING:     setting_proc();           break;
+      case M_ABOUT:       about_proc();             break;
+    }
   }
-  u8g2.sendBuffer();
 }
 
 //OLED初始化函数
 void oled_init()
 {
-  u8g2.setBusClock(1000000);
+  u8g2.setBusClock(1000000);  //硬件IIC接口使用
   u8g2.begin();
-  u8g2.setFont(u8g2_font_helvB18_tf);
-  u8g2.setContrast(controller.value[0]);
+  u8g2.setContrast(ui.param[DISP_BRI]);
   buf_ptr = u8g2.getBufferPtr();
   buf_len = 8 * u8g2.getBufferTileHeight() * u8g2.getBufferTileWidth();
-  display_width = u8g2.getDisplayWidth();
-  display_height = u8g2.getDisplayHeight();
 }
 
 void setup() 
 {
   eeprom_init();
+  ui_init();
   oled_init();
   btn_init();
   hid_init();
