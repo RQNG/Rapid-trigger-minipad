@@ -84,6 +84,7 @@ Rapid trigger是Wooting键盘的特色功能，是指没有固定键程，靠上
 下列项目都有Rapid trigger功能，它们各有优势，对我的项目有建议的，在给出建议之外，也可以尝试在这些项目中寻找解决方案。
 
 * hall-2k-keypad-handmade: https://github.com/chent7/hall-2k-keypad-handmade
+* cap4k：https://github.com/MaticsL/cap4k
 * minipad-firmware-old: https://github.com/minipadKB/minipad-firmware-old
 * minipad-firmware: https://github.com/minipadKB/minipad-firmware
 * fluxpad: https://github.com/sssata/fluxpad
