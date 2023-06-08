@@ -3,7 +3,11 @@
   
   主功能移植并优化自 Github 上的一个开源项目，添加了按键的独立参数和两端的死区，优化了初始化方式，增加控制器，模仿稚晖君 MonoUI 的超丝滑菜单。
 
-  当前版本：v3.0
+  v3.1 更新内容：
+
+    * 修复EC11旋钮使界面卡死的问题，感谢 GitHub 安红豆 提供的线索。
+    
+  v3 功能：
 
     * 此程序可视为 WouoUI v2.0 例程，WouoUI 是从此程序 v2.x 版本衍生出的 UI 架构。
     * UI 流畅度优化，实现了优雅的平滑动画，动画算法被优化到只有两行。
@@ -307,7 +311,7 @@ M_SELECT setting_menu[]
 M_SELECT about_menu[]
 {
   {"[ WouoUI ]"},
-  {"- Version: v2.0"},
+  {"- Version: v2.1"},
   {"- Board: STM32F103"},
   {"- Ram: 20k"},
   {"- Flash: 64k"},
@@ -1022,7 +1026,7 @@ struct
   bool      alv;  
   bool      blv;
   long      count;
-} btn;
+} volatile btn;
 
 void knob_inter() 
 {
