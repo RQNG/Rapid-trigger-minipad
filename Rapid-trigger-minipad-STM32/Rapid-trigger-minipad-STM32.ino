@@ -3,9 +3,9 @@
   
   主功能移植并优化自 Github 上的一个开源项目，添加了按键的独立参数和两端的死区，优化了初始化方式，增加控制器，模仿稚晖君 MonoUI 的超丝滑菜单。
 
-  v3.1 更新内容：
+  v3.2 更新内容：
 
-    * 修复EC11旋钮使界面卡死的问题，感谢 GitHub 安红豆 提供的线索。
+    * 优化动画函数，动画结束后不会再进行无意义的浮点数计算
     
   v3 功能：
 
@@ -311,7 +311,7 @@ M_SELECT setting_menu[]
 M_SELECT about_menu[]
 {
   {"[ WouoUI ]"},
-  {"- Version: v2.1"},
+  {"- Version: v2.2"},
   {"- Board: STM32F103"},
   {"- Ram: 20k"},
   {"- Flash: 64k"},
@@ -1280,8 +1280,11 @@ void layer_init_out()
 //动画函数
 void animation(float *a, float *a_trg, uint8_t n)
 {
-  if (fabs(*a - *a_trg) < 0.15) *a = *a_trg;
-  if (*a != *a_trg) *a += (*a_trg - *a) / (ui.param[n] / 10.0);
+  if (*a != *a_trg)
+  {
+    if (fabs(*a - *a_trg) < 0.15) *a = *a_trg;
+    else *a += (*a_trg - *a) / (ui.param[n] / 10.0);
+  }
 }
 
 //消失函数
