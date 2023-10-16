@@ -110,6 +110,10 @@ Rapid trigger是Wooting键盘的特色功能，是指没有固定键程，靠上
 
 * 初版方案建议收集动态：https://t.bilibili.com/757193959862697993
 
+# 赛博乞讨（划掉
+开发不易，如果有帮到你，请我喝杯咖啡可好
+![1697424547928](https://github.com/RQNG/Rapid-trigger-minipad/assets/115459678/193033c0-1ebb-4f8a-adcb-18d5e967b31f)
+
 # 更新
 ## 软件
 
